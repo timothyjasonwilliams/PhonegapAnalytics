@@ -13,7 +13,7 @@ $ cordova plugin add streethawkanalytics  --variable APP_KEY=<YOUR_APPLICATIONS_
 ## Documentation
 Click [here](https://streethawk.freshdesk.com/solution/articles/5000680125) for detailed documentation of StreetHawk's Analytics plugin
 
-## Other essential plugins
+## Other StreetHawk Phonegap plugins
 
 1. [Growth](https://github.com/StreetHawkSDK/PhonegapGrowth) for Viral and organic growth
 2. [Push](https://github.com/StreetHawkSDK/PhonegapPush) Push messaging in your application
