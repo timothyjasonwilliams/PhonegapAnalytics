@@ -1,45 +1,23 @@
-# Streethawk Phonegap Plugin
+# StreetHawk's Analytics Plugin
 
-[Streethawk](http://www.streethawk.com) phonegap plugin can be integrated in applications created using cordova phonegap. The plugin supports both Android and iOS. For detailed information and API documentation, please refer to [Streethawk Phonegap documentation.](http://api.streethawk.com/v1/docs/phonegap-introduction.html) 
+## Introduction
+The repository hosts Phonegap plugin of StreetHawk SDK's Analytics module. The plugin  reports various vital raw data to StreetHawk servers which is further processed and used for various analytic for your application. The module also provides API for tagging the install, identifying the users and tracking various important events inside your application. 
 
-## Steps to integrate Streethawk Phonegap Plugin
-
-Assuming you have an application created using Phonegap, you can integrate Streethawk SDK by following simple steps mentioned below.
-
-* In terminal, browse to root folder of your cordova phonegap application
-
-* Add streethawk plugin by running command
-```
-cordova plugin add https://github.com/streethawkphonegap/StreethawkPlugin.git --variable APP_KEY=<YOUR_APPLICATIONS_APP_KEY> --variable URL_SCHEME=<URL_SHEME_OF_APP>
-```
-Please note that, above command requires unique app_key of your application registered with Streethawk. If you dont have it , you can register you application's app_key [here](https://api.streethawk.com/static/bb/)
-
-* Initialise Streethawk
-Add the following code at start point of your application . For example you can call streethawkinit() from index.html.
+## Integration Steps
+Execute below mentioned command to add StreetHawk Analytics plugin to your application. In the command below, replace YOUR_APPLICATIONS_APP_KEY with application’s app_key registered with StreetHawk and URL_SCHEME_OF_APP with url scheme of your application for deeplinking. 
 
 ```
-...
-...
-<script type="text/javascript" src="plugins/com.streethawk.plugin/www/Streethawk.js"></script>
-...
-...
-  document.addEventListener("deviceready", onDeviceReady, false);
-  function onDeviceReady() {
-        var sh = cordova.require("com.streethawk.plugin.Streethawk");
-        sh.shSetiTunesId('<Itunesid>');
-        sh.shSetGcmSenderId('<SenderId>');
-        sh.streethawkinit();
-}
+$ cd <APPLICATION_DIRECTORY>
+$ cordova plugin add streethawkanalytics  --variable APP_KEY=<YOUR_APPLICATIONS_APP_KEY> --variable URL_SCHEME=<URL_SCHEME_OF_APP>
 ```
+## Documentation
+Click [here](https://streethawk.freshdesk.com/solution/articles/5000680125) for detailed documentation of StreetHawk's Analytics plugin
 
-* Build and run your application for iOS by using command
-```
-cordova run iOS
-```  
-* Build and run your application for Android by using command
-```
-cordova run android
-```
+## Other essential plugins
 
-That's it!. Streethawk is integrated in your application. Please refer to [Streethawk Phonegap documentation](http://api.streethawk.com/v1/docs/phonegap-introduction.html) for adding more Streethawk features.
- 
+1. [Growth](https://github.com/StreetHawkSDK/PhonegapGrowth) for Viral and organic growth
+2. [Push](https://github.com/StreetHawkSDK/PhonegapPush) Push messaging in your application
+3. [Geofence](https://github.com/StreetHawkSDK/PhonegapGeofence) for running geofence based campaigns 
+4. [Beacon](https://github.com/StreetHawkSDK/PhonegapBeacon) for running beacon based campaigns
+5. [Location](https://github.com/StreetHawkSDK/PhonegapLocations) for running campaigns based on user's location
+6. [Feeds](https://github.com/StreetHawkSDK/PhonegapFeeds) for sending feeds in your application
