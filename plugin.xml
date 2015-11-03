@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<plugin id="com.streethawk.core" version="1.7.0" xmlns="http://apache.org/cordova/ns/plugins/1.0"
+<plugin id="com.streethawk.core" version="1.7.2" xmlns="http://apache.org/cordova/ns/plugins/1.0"
 	xmlns:android="http://schemas.android.com/apk/res/android">
 	<name>StreetHawkCore</name>
 	<description> StreetHawk SDK plugin for analytics</description>	    
@@ -182,11 +182,16 @@
 	<info> StreetHawk Analytics Plugin. Along with this, you will require other StreetHawk plugin
 	    
 	   1. streethawkgrowth     : For viral growth of your application
-	   2. streethawkpush       : For push messaging in your application 
-	   3. streethawkbeacon 	   : For running beacon based campaigns.
-	   4. streethawkgeofence   : For running geofence based campaings
+	                           : (cordova plugin add streethawkgrowth)
+	   2. streethawkpush       : For push messaging in your application
+	   								: (cordova plugin add streethawkpush)
+	   3. streethawkbeacon 	   : For running beacon based campaigns     
+	   								: (cordova plugin add streethawkbeacon)
+	   4. streethawkgeofence   : For running geofence based campaings   
+	   								: (cordova plugin add streethawkgeofence)
 	   5. streethawklocations  : For running user's location based campaigns
+	   								: (cordova plugin add streethawklocations)
 	   6. streethawkfeeds      : For distributing feeds to your application users  
-	   
+	   								: (cordova plugin add streethawkfeeds)
 	</info>
 </plugin>
