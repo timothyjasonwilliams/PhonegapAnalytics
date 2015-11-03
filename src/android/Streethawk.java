@@ -146,8 +146,12 @@ public class Streethawk extends CordovaPlugin {
 		/* FEEDS plugin */
 
 		if(action.equals("notifyNewFeedCallback")){
+			return notifyNewFeedCallback(callbackContext);
+		}
+		if(action.equals("registerFeedItemCallback")){
 			return registerFeedItemCallBack(callbackContext);
 		}
+		
 		if(action.equals("shReportFeedAck")){
 			return shReportFeedAck(args);
 		}
@@ -702,14 +706,15 @@ public class Streethawk extends CordovaPlugin {
 	}
 	
 	 private boolean sendPushResult(JSONArray args)throws JSONException{
-	        String msgId = args.getString(0);	
-			int result = args.getInt(1);
+		 final Context context = cordova.getActivity().getApplicationContext();   
+		 	final String msgId = args.getString(0);	
+			final int result = args.getInt(1);
 			Class noParams[] = {};
 			new Thread(new Runnable() {
 				@Override
 				public void run() {
 					Class params[] = new Class[2];
-					params[0] = String.Class;
+					params[0] = String.class;
 					params[1] = Integer.TYPE; 
 							
 					Class[] paramContext = new Class[1];
@@ -721,7 +726,7 @@ public class Streethawk extends CordovaPlugin {
 						Object obj = pushMethod.invoke(null,context);
 						if (null != obj) {
 							Method addPushModule = push.getDeclaredMethod("sendPushResult", params);
-							addPushModule.invoke(obj,msgid,result);
+							addPushModule.invoke(obj,msgId,result);
 						}
 					} catch (ClassNotFoundException e1) {
 						Log.w(TAG,SUBTAG+"No Push module found. Add streethawk push plugin");
@@ -882,6 +887,36 @@ public class Streethawk extends CordovaPlugin {
 	}
 
 	/* FEED API */
+	
+	private boolean notifyNewFeedCallback(CallbackContext callbackContext){	
+		final Context context = cordova.getActivity().getApplicationContext();
+		Class[] params = new Class[2];
+		params[0] = Context.class;
+		params[1] = CallbackContext.class;
+		Class noParams[] = {};
+		try {
+			Class feedWrapper = Class.forName("com.streethawk.feeds.FeedWrapper");
+			Method wrapperMethod = feedWrapper.getMethod("getInstance",noParams);
+			Object objWrapper = wrapperMethod.invoke(null);
+			if(null!=objWrapper){
+				Method registerFeed = feedWrapper.getDeclaredMethod("notifyNewFeedCallback",params);
+				registerFeed.invoke(objWrapper,context,callbackContext);
+			}
+		} catch (ClassNotFoundException e1) {
+			Log.w(TAG,SUBTAG+"Feed module is not  not present");
+			return false;
+		} catch (IllegalAccessException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (NoSuchMethodException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (InvocationTargetException e1) {
+			e1.printStackTrace();
+			return false;
+		}
+		return true;
+	}
 
 	private boolean registerFeedItemCallBack(CallbackContext callbackContext){	
 		final Context context = cordova.getActivity().getApplicationContext();

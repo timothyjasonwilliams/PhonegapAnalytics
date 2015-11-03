@@ -150,6 +150,9 @@ SHLibrary.prototype.shExitBeacon = function(string_uuid, int_majorNo, int_minorN
 // Feed plugin
 
 SHLibrary.prototype.notifyNewFeedCallback = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'notifyNewFeedCallback', []);
+}
+SHLibrary.prototype.registerFeedItemCallback = function(appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'registerFeedItemCallback', []);
 }
 SHLibrary.prototype.reportFeedAck = function(int_feedid, appSuccess, appFail) {
