@@ -125,6 +125,9 @@ SHLibrary.prototype.setUseCustomDialog = function(bool_enable, appSuccess, appFa
 SHLibrary.prototype.forcePushToNotificationBar = function(bool_status, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'forcePushToNotificationBar', [bool_status]);
 }
+SHLibrary.prototype.sendPushResult = function(bool_status, appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'forcePushToNotificationBar', [bool_status]);
+}
 
 // Growth plugin
 

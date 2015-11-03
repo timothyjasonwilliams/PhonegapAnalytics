@@ -83,6 +83,12 @@ public class Streethawk extends CordovaPlugin {
 			Log.e("Anurag","i am here 1");
 			return shSendSimpleFeedback(args);
 		}
+		if(action.equals("shOnResume")){
+			return shOnResume();
+		}
+		if(action.equals("shOnPause")){
+			return shOnPause();
+		}
 
 		/*PUSH Plugin*/
 		if(action.equals("shSetGcmSenderId")){
@@ -114,6 +120,9 @@ public class Streethawk extends CordovaPlugin {
 		}
 		if(action.equals("shGetViewName")){
 			return shGetViewName(callbackContext);
+		}
+		if(action.equals("sendPushResult")){
+			return sendPushResult(args);
 		}
 
 
@@ -355,10 +364,17 @@ public class Streethawk extends CordovaPlugin {
 	private boolean shSendSimpleFeedback(JSONArray args)throws JSONException{
 		String title = args.getString(0);
 		String msg = args.getString(1);
-		Log.e("Anurag","I am sending simplefeedback");
 		StreetHawk.INSTANCE.sendSimpleFeedback(title,msg);
 		return true;
 	}
+	private boolean shOnResume(){
+    	StreetHawk.INSTANCE.shActivityResumed(cordova.getActivity());
+    	return true;
+    }
+	private boolean shOnPause(){
+    	StreetHawk.INSTANCE.shActivityPaused(cordova.getActivity());
+    	return true;
+    }
 
 	/*PUSH API */	
 	private void addPushModule(){
@@ -658,8 +674,6 @@ public class Streethawk extends CordovaPlugin {
 	private boolean shGetViewName(CallbackContext callbackContext){
 		final Context context = cordova.getActivity().getApplicationContext();
 		Class noParams[] = {};
-		Class booleanParams[] = new Class[1];
-		booleanParams[0]= Boolean.class;
 		Class[] paramContext = new Class[1];
 		paramContext[0] = Context.class;
 		Class push = null;
@@ -686,6 +700,42 @@ public class Streethawk extends CordovaPlugin {
 		}
 		return true;
 	}
+	
+	 private boolean sendPushResult(JSONArray args)throws JSONException{
+	        String msgId = args.getString(0);	
+			int result = args.getInt(1);
+			Class noParams[] = {};
+			new Thread(new Runnable() {
+				@Override
+				public void run() {
+					Class params[] = new Class[2];
+					params[0] = String.Class;
+					params[1] = Integer.TYPE; 
+							
+					Class[] paramContext = new Class[1];
+					paramContext[0] = Context.class;
+					Class push = null;
+					try {
+						push = Class.forName("com.streethawk.library.push.Push");
+						Method pushMethod = push.getMethod("getInstance", paramContext);
+						Object obj = pushMethod.invoke(null,context);
+						if (null != obj) {
+							Method addPushModule = push.getDeclaredMethod("sendPushResult", params);
+							addPushModule.invoke(obj,msgid,result);
+						}
+					} catch (ClassNotFoundException e1) {
+						Log.w(TAG,SUBTAG+"No Push module found. Add streethawk push plugin");
+					} catch (IllegalAccessException e1) {
+						e1.printStackTrace();
+					} catch (NoSuchMethodException e1) {
+						e1.printStackTrace();
+					} catch (InvocationTargetException e1) {
+						e1.printStackTrace();
+					}
+				}
+			}).start();
+			return true;
+	    }
 
 
 
