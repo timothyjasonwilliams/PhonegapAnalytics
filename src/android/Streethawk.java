@@ -77,6 +77,7 @@ public class Streethawk extends CordovaPlugin {
 			return shGetAppKey(callbackContext);
 		}
 		if(action.equals("shDeeplinking")){
+			Log.e("Anurag","shDeeplinking in java 1");
 			return processDeeplinkRequest(callbackContext);
 		}
 		if(action.equals("shSendSimpleFeedback")){
@@ -676,6 +677,7 @@ public class Streethawk extends CordovaPlugin {
 
 
 	private boolean shGetViewName(CallbackContext callbackContext){
+		Log.e("Anurag","shGetViewName");
 		final Context context = cordova.getActivity().getApplicationContext();
 		Class noParams[] = {};
 		Class[] paramContext = new Class[1];
@@ -687,8 +689,11 @@ public class Streethawk extends CordovaPlugin {
 			Object obj = pushMethod.invoke(null,context);
 			if (null != obj) {
 				Method addPushModule = push.getDeclaredMethod("getAppPage", noParams);
+				Log.e("Anurag","shGetViewName 1");
 				Object result = addPushModule.invoke(obj);
+				Log.e("Anurag","apppage"+result);
 				if(result instanceof String){
+					Log.e("Anurag","apppage 2"+result);
 					String tmp = ((String)result);
 					callbackContext.success(tmp);
 				}
