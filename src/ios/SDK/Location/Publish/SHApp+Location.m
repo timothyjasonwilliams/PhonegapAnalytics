@@ -49,6 +49,11 @@ NSString * const SHLMNotification_kRegionState = @"RegionState";
 NSString * const SHLMNotification_kBeacons = @"Beacons";
 NSString * const SHLMNotification_kAuthStatus = @"AuthStatus";
 
+int const SHLocation_FG_Interval = 1;
+int const SHLocation_FG_Distance = 100;
+int const SHLocation_BG_Interval = 5;
+int const SHLocation_BG_Distance = 500;
+
 #define ENABLE_LOCATION_SERVICE             @"ENABLE_LOCATION_SERVICE"  //key for record user manually set isLocationServiceEnabled
 
 @implementation SHApp (LocationExt)
@@ -87,27 +92,35 @@ NSString * const SHLMNotification_kAuthStatus = @"AuthStatus";
 {
     if (self.isLocationServiceEnabled != isLocationServiceEnabled)
     {
-        if (isLocationServiceEnabled)
+        if (isLocationServiceEnabled) //This assumes to start location, not consider `StreetHawk.reportWorkHomeLocationOnly`, even it enables standard location service, next FG/BG will correct it.
         {
             //if enable update first, as next part will consider it.
             [[NSUserDefaults standardUserDefaults] setBool:isLocationServiceEnabled forKey:ENABLE_LOCATION_SERVICE];
             [[NSUserDefaults standardUserDefaults] synchronize];
             [StreetHawk.locationManager requestPermissionSinceiOS8];
-#ifdef SH_FEATURE_LATLNG
-            [StreetHawk.locationManager startMonitorGeoLocationStandard:([UIApplication sharedApplication].applicationState == UIApplicationStateActive)];
-#endif
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_StartMonitorGeoLocation" object:nil];
         }
         else
         {
-#ifdef SH_FEATURE_LATLNG
-            [StreetHawk.locationManager stopMonitorGeoLocation];
-#endif
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_StopMonitorGeoLocation" object:nil];
             //if disable update after take effect, otherwise above function will ignore it.
             [[NSUserDefaults standardUserDefaults] setBool:isLocationServiceEnabled forKey:ENABLE_LOCATION_SERVICE];
             [[NSUserDefaults standardUserDefaults] synchronize];
         }
         [StreetHawk registerOrUpdateInstallWithHandler:nil]; //update "feature_locations"
     }
+}
+
+- (BOOL)reportWorkHomeLocationOnly
+{
+    NSNumber *value = objc_getAssociatedObject(self, @selector(reportWorkHomeLocationOnly));
+    return [value boolValue];
+}
+
+- (void)setReportWorkHomeLocationOnly:(BOOL)reportWorkHomeLocationOnly
+{
+    objc_setAssociatedObject(self, @selector(reportWorkHomeLocationOnly), [NSNumber numberWithBool:reportWorkHomeLocationOnly], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_StartMonitorGeoLocation" object:nil];
 }
 
 - (SHLocationManager *)locationManager
@@ -125,6 +138,14 @@ NSString * const SHLMNotification_kAuthStatus = @"AuthStatus";
     BOOL globalDisable = ![CLLocationManager locationServicesEnabled];
     BOOL appDisable = [CLLocationManager authorizationStatus] == kCLAuthorizationStatusDenied;
     return (globalDisable || appDisable);
+}
+
+- (void)setLocationUpdateFrequencyForFGInterval:(int)fgInterval forFGDistance:(int)fgDistance forBGInterval:(int)bgInterval forBGDistance:(int)bgDistance
+{
+    StreetHawk.locationManager.fgMinTimeBetweenEvents = fgInterval;
+    StreetHawk.locationManager.fgMinDistanceBetweenEvents = fgDistance;
+    StreetHawk.locationManager.bgMinTimeBetweenEvents = bgInterval;
+    StreetHawk.locationManager.bgMinDistanceBetweenEvents = bgDistance;
 }
 
 @end

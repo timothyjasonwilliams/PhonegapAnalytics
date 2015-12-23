@@ -19,9 +19,6 @@
 //header from StreetHawk
 #import "SHLogger.h" //for LOG_RESULT
 #import "SHUtils.h" //for shStrIsEmpty
-#ifdef SH_FEATURE_NOTIFICATION
-#import "SHApp+Notification.h" //for ISHCustomiseHandler
-#endif
 
 @implementation PushDataForApplication
 
@@ -96,6 +93,18 @@
     {
         _action = SHAction_EnableBluetooth;
     }
+    else if (code == 8013)
+    {
+        _action = SHAction_EnablePushMsg;
+    }
+    else if (code == 8014)
+    {
+        _action = SHAction_EnableLocation;
+    }
+    else if (code == 8042)
+    {
+        _action = SHAction_Ghost;
+    }
     else if (code == 8049)
     {
         _action = SHAction_CustomJson;
@@ -149,15 +158,7 @@
         }
         [StreetHawk sendLogForCode:LOG_CODE_PUSH_RESULT withComment:[NSString stringWithFormat:@"%ld", (long)self.code] forAssocId:self.msgID withResult:logResult withHandler:handler];
         //invoke custom handler
-#ifdef SH_FEATURE_NOTIFICATION
-        for (id<ISHCustomiseHandler> callback in StreetHawk.arrayCustomisedHandler)
-        {
-            if ([callback respondsToSelector:@selector(onReceiveResult:withResult:)]) //implementation is optional
-            {
-                [callback onReceiveResult:self withResult:result];
-            }
-        }
-#endif
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_SendResult_Notification" object:nil userInfo:@{@"pushdata": self, @"result": @(result)}];
     }
 }
 

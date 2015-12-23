@@ -19,12 +19,6 @@
 //header from StreetHawk
 #import "SHUtils.h" //for streetHawkIsEnabled()
 #import "SHFriendlyNameObject.h"  //for friendly name parse
-#ifdef SH_FEATURE_GROWTH
-#import "SHGrowth.h" //for growth increase click
-#endif
-#ifdef SH_FEATURE_NOTIFICATION
-#import "SHApp+Notification.h" //for handlePushDataForAppCallback
-#endif
 #import "PushDataForApplication.h" //for pushData
 #import "SHBaseViewController.h" //for `ISHDeepLinking` protocol
 //header from System
@@ -52,10 +46,7 @@
     
     if (shouldIncreaseClick)
     {
-        //send Growth increase request
-#ifdef SH_FEATURE_GROWTH
-        [[SHGrowth sharedInstance] increaseGrowth:deepLinking withHandler:nil];
-#endif
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_GrowthBridge_Increase_Notification" object:nil userInfo:@{@"url": NONULL(deepLinking)}]; //send Growth increase request
     }
     
     NSString *vcClassName = nil;
@@ -207,9 +198,7 @@
         //Requested by Tobias and Anurag, even user is already viewing the page, should still show message box, maybe the message box contains some information that user should read.
         if ([pushData shouldShowConfirmDialog])
         {
-#ifdef SH_FEATURE_NOTIFICATION
-            [StreetHawk handlePushDataForAppCallback:pushData clickButton:nil];
-#endif
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_HandlePushData" object:nil userInfo:@{@"pushdata": pushData}];
         }
         return YES;  //already visible, not continue to create and show
     }
@@ -288,16 +277,17 @@
     };
     if ([pushData shouldShowConfirmDialog])
     {
-#ifdef SH_FEATURE_NOTIFICATION
-        [StreetHawk handlePushDataForAppCallback:pushData clickButton:^(SHResult result)
-         {
-             if (result == SHResult_Accept)
-             {
-                 action();
-             }
-             [pushData sendPushResult:result withHandler:nil];
-         }];
-#endif
+        NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+        dictUserInfo[@"pushdata"] = pushData;
+        dictUserInfo[@"clickbutton"] = ^(SHResult result)
+        {
+            if (result == SHResult_Accept)
+            {
+                action();
+            }
+            [pushData sendPushResult:result withHandler:nil];
+        };
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_HandlePushData" object:nil userInfo:dictUserInfo];
     }
     else
     {

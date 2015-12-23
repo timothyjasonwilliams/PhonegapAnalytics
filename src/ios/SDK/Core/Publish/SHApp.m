@@ -25,22 +25,6 @@
 #import "SHDeepLinking.h"
 #import "SHFriendlyNameObject.h"
 #import "SHUtils.h"
-#ifdef SH_FEATURE_NOTIFICATION
-#import "SHApp+Notification.h" //for access notification properties
-#import "SHNotificationHandler.h" //for create SHNotificationHandler instance
-#import "SHPushDataCallback.h" //for create SHPushDataCallback
-#endif
-#ifdef SH_FEATURE_CRASH
-#import "SHApp+Crash.h" //for crash handler
-#import "SHCrashHandler.h" //for create SHCrashHandler instance
-#endif
-#if defined(SH_FEATURE_LATLNG) || defined(SH_FEATURE_GEOFENCE) || defined(SH_FEATURE_IBEACON)
-#import "SHApp+Location.h"
-#import "SHLocationManager.h" //for create SHLocationManager instance
-#endif
-#ifdef SH_FEATURE_GROWTH
-#import "SHGrowth.h" //for growth handle register notification
-#endif
 
 #define SETTING_UTC_OFFSET                  @"SETTING_UTC_OFFSET"  //key for local saved utc offset value
 
@@ -90,6 +74,7 @@
 
 @interface SHApp ()
 
+@property (nonatomic) BOOL isBridgeInitCalled; //Flag to let module's bridge init only call once.
 @property (nonatomic) BOOL isRegisterInstallForAppCalled; //Customer Sandstone call `registerInstallForApp` many times and meet crash. It does not make sense to call it twice and later, add this flag to ignore second and later call.
 @property (nonatomic) BOOL isFinishLaunchOptionCalled; //For handle Phonegap, Unity, Titanium finish launch is postpone to call again after a few seconds, at that time StreetHawk is register and ready to use. However it cause native and Xamarin enter twice. To avoid call it again add this flag.
 
@@ -117,6 +102,9 @@
 //sh_utc_offset update
 - (void)checkUtcOffsetUpdate;  //Check utc_offset: if not logged before or changed, log it immediately.
 - (void)timeZoneChangeNotificationHandler:(NSNotification *)notification;  //Notification handler called when time zone change
+
+//send module tags
+- (void)sendModuleTags; //Send current build include what modules.
 
 //Log enter/exit page.
 @property (nonatomic, strong) SHViewActivity *currentView;
@@ -170,6 +158,64 @@
     {
         instance = [[SHApp alloc] init];
     });
+    if (!instance.isBridgeInitCalled)
+    {
+        instance.isBridgeInitCalled = YES;
+        //add module init bridges. This is automatically for native, Phonegap, Xamarin.
+        //In case cannot reflect bridge class, customer need to manually add notification observer.
+        //disable warning as this selector is defined in sub-module category.
+#pragma GCC diagnostic push
+#pragma clang diagnostic push
+#pragma GCC diagnostic ignored "-Wundeclared-selector"
+#pragma clang diagnostic ignored "-Wundeclared-selector"
+        Class growthBridge = NSClassFromString(@"SHGrowthBridge");
+        NSLog(@"Bridge for growth: %@.", growthBridge); //cannot use SHLog as this place `isDebugMode` not configured yet. Use NSLog to make sure prints important bridge message.
+        if (growthBridge)
+        {
+            [[NSNotificationCenter defaultCenter] addObserver:growthBridge selector:@selector(bridgeHandler:) name:SH_InitBridge_Notification object:nil];
+        }
+        Class notificationBridge = NSClassFromString(@"SHNotificationBridge");
+        NSLog(@"Bridge for notification: %@.", notificationBridge);
+        if (notificationBridge)
+        {
+            [[NSNotificationCenter defaultCenter] addObserver:notificationBridge selector:@selector(bridgeHandler:) name:SH_InitBridge_Notification object:nil];
+        }
+        Class locationBridge = NSClassFromString(@"SHLocationBridge");
+        NSLog(@"Bridge for location: %@.", locationBridge);
+        if (locationBridge)
+        {
+            [[NSNotificationCenter defaultCenter] addObserver:locationBridge selector:@selector(bridgeHandler:) name:SH_InitBridge_Notification object:nil];
+        }
+        Class geofenceBridge = NSClassFromString(@"SHGeofenceBridge");
+        NSLog(@"Bridge for geofence: %@.", geofenceBridge);
+        if (geofenceBridge)
+        {
+            [[NSNotificationCenter defaultCenter] addObserver:geofenceBridge selector:@selector(bridgeHandler:) name:SH_InitBridge_Notification object:nil];
+        }
+        Class beaconBridge = NSClassFromString(@"SHBeaconBridge");
+        NSLog(@"Bridge for beacon: %@.", beaconBridge);
+        if (beaconBridge)
+        {
+            [[NSNotificationCenter defaultCenter] addObserver:beaconBridge selector:@selector(bridgeHandler:) name:SH_InitBridge_Notification object:nil];
+        }
+        Class feedBridge = NSClassFromString(@"SHFeedBridge");
+        NSLog(@"Bridge for feed: %@.", feedBridge);
+        if (feedBridge)
+        {
+            [[NSNotificationCenter defaultCenter] addObserver:feedBridge selector:@selector(bridgeHandler:) name:SH_InitBridge_Notification object:nil];
+        }
+        Class crashBridge = NSClassFromString(@"SHCrashBridge");
+        NSLog(@"Bridge for crash: %@.", crashBridge);
+        if (crashBridge)
+        {
+            [[NSNotificationCenter defaultCenter] addObserver:crashBridge selector:@selector(bridgeHandler:) name:SH_InitBridge_Notification object:nil];
+        }
+#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
+        //finally post notification to let bridge ready.
+        [[NSNotificationCenter defaultCenter] postNotificationName:SH_InitBridge_Notification object:nil];
+    }
+    
     return instance;
 }
 
@@ -177,41 +223,26 @@
 {
     if (self = [super init])
     {
+        self.isBridgeInitCalled = NO;
         self.isRegisterInstallForAppCalled = NO;
         self.isFinishLaunchOptionCalled = NO;
         //Check local SQLite database and NSUserDefaults at first time before any call. If not match next will be treat as a new install. This is only checked when launch App, not check during App running. Check Apns mode also.
         [SHLogger checkLogdbForFreshInstall];
         [SHLogger checkSentApnsModeForFreshInstall];
+        //New launch makes lat/lng to be (0, 0), as must have location bridge to update them.
+        [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:SH_GEOLOCATION_LAT];
+        [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:SH_GEOLOCATION_LNG];
+        [[NSUserDefaults standardUserDefaults] setObject:@(0)/*CBCentralManagerStateUnknown*/ forKey:SH_BEACON_BLUETOOTH];
+        [[NSUserDefaults standardUserDefaults] setObject:@(3)/*SHiBeaconState_Ignore*/ forKey:SH_BEACON_iBEACON];
+        [[NSUserDefaults standardUserDefaults] synchronize];
         //Then continue normal code.
         self.isDebugMode = NO;
-#ifdef SH_FEATURE_CRASH
-        self.isEnableCrashReport = YES;
-#endif
-#ifdef SH_FEATURE_NOTIFICATION
-        self.isDefaultNotificationEnabled = YES;  //default value, user can change it by StreetHawk.isDefaultNotificationEnabled = NO. Default value only used to initialize isNotificationEnabled one time, once user manually set StreetHawk.isNotificationEnabled, default value is ignored.        
-        if ([[UIDevice currentDevice].systemVersion doubleValue] >= 8.0)
-        {
-            self.notificationTypes = UIUserNotificationTypeAlert | UIUserNotificationTypeBadge | UIUserNotificationTypeSound;
-        }
-        else
-        {
-            self.notificationTypes = UIRemoteNotificationTypeAlert | UIRemoteNotificationTypeBadge | UIRemoteNotificationTypeSound | UIRemoteNotificationTypeNewsstandContentAvailability;
-        }
-        self.arrayCustomisedHandler = [NSMutableArray array];
-        [self shSetCustomiseHandler:[[SHPushDataCallback alloc] init]]; //streethawk's add first, so customer's will insert before it.
-        self.arrayPGObservers = [NSMutableArray array];
-#endif
-#if defined(SH_FEATURE_LATLNG) || defined(SH_FEATURE_GEOFENCE) || defined(SH_FEATURE_IBEACON)
-        self.isDefaultLocationServiceEnabled = YES;  //same as isDefaultPushNotificationEnabled.
-#endif
         self.backgroundQueue = [[NSOperationQueue alloc] init];
         self.backgroundQueue.maxConcurrentOperationCount = 1;
         self.install_semaphore = dispatch_semaphore_create(1);  //happen in sequence
         //some handlers initialize erlier
         self.installHandler = [[SHInstallHandler alloc] init];
-#ifdef SH_FEATURE_NOTIFICATION
-        self.notificationHandler = [[SHNotificationHandler alloc] init]; //Phonegap do streethawkinit() later, but need notification handler to available to process 8004 set view name at first time.
-#endif
+
         self.autoIntegrateAppDelegate = YES;
         [self setupNotifications]; //move early so that Phonegap can handle remote notification in appDidFinishLaunching.
     }
@@ -248,16 +279,8 @@
     self.isDebugMode = isDebugMode;
     //initialize handlers
     self.innerLogger = [[SHLogger alloc] init];  //this creates logs db, wait till user call `registerInstallForApp` to take action. logger must before location manager, because location manager create and start to send log, for example failure, and logger must be ready.
-#if defined(SH_FEATURE_LATLNG) || defined(SH_FEATURE_GEOFENCE) || defined(SH_FEATURE_IBEACON)
-    self.locationManager = [SHLocationManager sharedInstance];  //cannot move to `init` because it starts `startMonitorGeoLocationStandard` when create, more important move up cause dead loop on [SHApp sharedInstance].
-#endif
-#ifdef SH_FEATURE_CRASH
-    if (self.isEnableCrashReport)
-    {
-        self.crashHandler = [[SHCrashHandler alloc] init];
-        [self.crashHandler enableCrashReporter];
-    }
-#endif
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_CreateLocationManager" object:nil];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_CrashBridge_CreateObject" object:nil];
     //At first possible place check app/status (https://bitbucket.org/shawk/streethawk/issue/555/apps-status-should-be-called-before), note:
     //1. It does NOT stop anything, streethawkEnabled is YES by default, and all other functions work, not wait for completeHandler.
     //2. It sends /apps/status request before all other request, but cannot put init as app_key is not known yet.
@@ -276,6 +299,8 @@
     [[NSUserDefaults standardUserDefaults] synchronize];
     //check time zone and register for later change
     [self checkUtcOffsetUpdate];
+    //check current build include which modules and send tags.
+    [self sendModuleTags];
     //setup intercept app delegate
     if (self.autoIntegrateAppDelegate)
     {
@@ -337,7 +362,7 @@
 {
     //Framework version is upgraded by StreetHawkCore-Info.plist and StreetHawkCoreRes-Info.plist, but the version number is not accessible by code. StreetHawkCore-Info.plist is built as binrary in main App, StreetHawkCoreRes-Info.plist may be contained in main App but not guranteed. To make sure this version work, add a method with hard-coded version number.
     //Format: X.Y.Z, make sure X and Y and Z are from >= 0  and < 1000.
-    return @"1.7.2";
+    return @"1.7.5";
 }
 
 - (SHInstall *)currentInstall
@@ -500,102 +525,45 @@
             needHeartbeatLog = NO;
         }
     }
-#if defined(SH_FEATURE_LATLNG) || defined(SH_FEATURE_GEOFENCE) || defined(SH_FEATURE_IBEACON)
-    if (needHeartbeatLog)
+    Class locationBridge = NSClassFromString(@"SHLocationBridge");
+    if (locationBridge) //consider sending more location logline 19.
     {
-        //Meet one crash when turn off air-plan mode after one night. At this time background fetch happen, but meantime location change happen due to network recover. Try to not do background task in this case to avoid crash. https://bitbucket.org/shawk/streethawk/issue/442/crash-background-fetch-exceed-time.
-        NSTimeInterval recoverTime = 0;
-        NSObject *recoverTimeValue = [[NSUserDefaults standardUserDefaults] objectForKey:@"NETWORK_RECOVER_TIME"];
-        if (recoverTimeValue != nil && [recoverTimeValue isKindOfClass:[NSNumber class]])
+        NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+        dictUserInfo[@"needHeartbeatLog"] = @(needHeartbeatLog);
+        dictUserInfo[@"needComplete"] = @(needComplete);
+        if (completionHandler)
         {
-            recoverTime = [(NSNumber *)recoverTimeValue doubleValue];
+            dictUserInfo[@"completionHandler"] = completionHandler;
         }
-        if (recoverTime == 0/*If reachability says it's not connected, not do heartbeat. It may be not accurate(https://bitbucket.org/shawk/streethawk/issue/443/not-send-request-if-network-unavailable), but in bad network status it's more possible to crash, and avoid crash is first priority.*/
-            || [[NSDate date] timeIntervalSinceReferenceDate] - recoverTime < 3/*not just turn off air plan mode*/)
-        {
-            needHeartbeatLog = NO;
-        }
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_RegularTask" object:nil userInfo:dictUserInfo];
     }
-#endif
-#ifdef SH_FEATURE_LATLNG
-    BOOL needLocationLog = ([SHLocationManager locationServiceEnabledForApp:NO/*must allowed location already*/] && StreetHawk.locationManager.currentGeoLocation.latitude != 0 && StreetHawk.locationManager.currentGeoLocation.longitude != 0); //log current geo location if location service is enabled and already detect location.
-    if (needLocationLog)
+    else //only do heart beat as location is not available
     {
-        NSObject *lastPostLocationLogsVal = [[NSUserDefaults standardUserDefaults] objectForKey:REGULAR_LOCATION_LOGTIME];
-        if (lastPostLocationLogsVal != nil && [lastPostLocationLogsVal isKindOfClass:[NSNumber class]])
+        if (!needHeartbeatLog) //nothing to do
         {
-            NSTimeInterval lastPostLocationLogs = [(NSNumber *)lastPostLocationLogsVal doubleValue];
-            if ([[NSDate date] timeIntervalSinceReferenceDate] - lastPostLocationLogs < 60*60) //more location time interval is 1 hour
+            if (needComplete && completionHandler != nil)
             {
-                needLocationLog = NO;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    completionHandler(UIBackgroundFetchResultNewData);
+                });
             }
         }
-    }
-#else
-    BOOL needLocationLog = NO;
-#endif
-    if (!needHeartbeatLog && !needLocationLog) //nothing to do
-    {
-        if (needComplete && completionHandler != nil)
+        else //send heart beat
         {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                completionHandler(UIBackgroundFetchResultNewData);
-            });
+            [StreetHawk sendLogForCode:LOG_CODE_HEARTBEAT withComment:@"Heart beat." forAssocId:0 withResult:100/*ignore*/ withHandler:^(NSObject *result, NSError *error)
+             {
+                 if (needComplete && completionHandler != nil)
+                 {
+                     dispatch_async(dispatch_get_main_queue(), ^{
+                         completionHandler(UIBackgroundFetchResultNewData);
+                     });
+                 }
+             }];
         }
-    }
-    else if (needHeartbeatLog && needLocationLog)  //send both
-    {
-#ifdef SH_FEATURE_LATLNG
-        NSDictionary *dictLoc = @{@"lat": @(StreetHawk.locationManager.currentGeoLocation.latitude), @"lng": @(StreetHawk.locationManager.currentGeoLocation.longitude)};
-        [StreetHawk sendLogForCode:LOG_CODE_LOCATION_MORE withComment:shSerializeObjToJson(dictLoc)];
-#endif
-        [StreetHawk sendLogForCode:LOG_CODE_HEARTBEAT withComment:@"Heart beat." forAssocId:0 withResult:100/*ignore*/ withHandler:^(NSObject *result, NSError *error)
-         {
-             if (needComplete && completionHandler != nil)
-             {
-                 dispatch_async(dispatch_get_main_queue(), ^{
-                     completionHandler(UIBackgroundFetchResultNewData);
-                 });
-             }
-         }];
-    }
-    else if (needHeartbeatLog)  //only send heart beat
-    {
-        [StreetHawk sendLogForCode:LOG_CODE_HEARTBEAT withComment:@"Heart beat." forAssocId:0 withResult:100/*ignore*/ withHandler:^(NSObject *result, NSError *error)
-         {
-             if (needComplete && completionHandler != nil)
-             {
-                 dispatch_async(dispatch_get_main_queue(), ^{
-                     completionHandler(UIBackgroundFetchResultNewData);
-                 });
-             }
-         }];
-    }
-    else  //only send more location
-    {
-#ifdef SH_FEATURE_LATLNG
-        NSDictionary *dictLoc = @{@"lat": @(StreetHawk.locationManager.currentGeoLocation.latitude), @"lng": @(StreetHawk.locationManager.currentGeoLocation.longitude)};
-        [StreetHawk sendLogForCode:LOG_CODE_LOCATION_MORE withComment:shSerializeObjToJson(dictLoc) forAssocId:0 withResult:100/*ignore*/ withHandler:^(NSObject *result, NSError *error)
-         {
-             if (needComplete && completionHandler != nil)
-             {
-                 dispatch_async(dispatch_get_main_queue(), ^{
-                     completionHandler(UIBackgroundFetchResultNewData);
-                 });
-             }
-         }];
-#else
-        if (needComplete && completionHandler != nil)
-        {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                completionHandler(UIBackgroundFetchResultNewData);
-            });
-        }
-#endif
-    }
+    }    
 }
 
-- (BOOL)openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation
+- (BOOL)openURL:(NSURL *)url
 {
     BOOL handledBySDK = NO;
     if (StreetHawk.developmentPlatform == SHDevelopmentPlatform_Native || StreetHawk.developmentPlatform == SHDevelopmentPlatform_Xamarin)
@@ -613,9 +581,7 @@
     }
     if (!handledBySDK && StreetHawk.openUrlHandler != nil)
     {
-#ifdef SH_FEATURE_GROWTH
-        [[SHGrowth sharedInstance] increaseGrowth:url.absoluteString withHandler:nil]; //send Growth increase request
-#endif
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_GrowthBridge_Increase_Notification" object:nil userInfo:@{@"url": NONULL(url.absoluteString)}]; //send Growth increase request
         StreetHawk.openUrlHandler(url);
         return YES; //open url is handled by customer code.
     }
@@ -624,8 +590,13 @@
 
 - (void)setAdvertisingIdentifier:(NSString *)advertisingIdentifier
 {
-    [[NSUserDefaults standardUserDefaults] setObject:NONULL(advertisingIdentifier) forKey:ADS_IDENTIFIER];
-    [[NSUserDefaults standardUserDefaults] synchronize];
+    NSString *refinedAds = NONULL(advertisingIdentifier);
+    if ([refinedAds compare:StreetHawk.advertisingIdentifier] != NSOrderedSame)
+    {
+        [StreetHawk tagString:refinedAds forKey:@"sh_advertising_identifier"];
+        [[NSUserDefaults standardUserDefaults] setObject:refinedAds forKey:ADS_IDENTIFIER];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
 }
 
 - (NSString *)advertisingIdentifier
@@ -671,53 +642,36 @@
     SHLog(@"Application did finish launching with launchOptions: %@", launchOptions);
 
     BOOL isFromDelayLaunch = [notification.name isEqualToString:@"StreetHawkDelayLaunchOptionsNotification"]; //in case from delay launch options, the remote delegate happens when app launch, and at that time StreetHawk delegate not ready, it's pass and cannot handle. Handle it again here.
-    //Since iOS 7.0 delegate with `completionHandler` is introduced, by testing if App not launched and notification arrives, new style function is called, but old style function not called. Remote notification function should NOT be called twice, so since iOS 7.0 not call it here.
-#ifdef SH_FEATURE_NOTIFICATION
-    if (isFromDelayLaunch || [[UIDevice currentDevice].systemVersion doubleValue] < 7.0)
-    {
-        NSDictionary *remoteNotification = launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey];
-        if (remoteNotification != nil)
-        {
-            [StreetHawk handleRemoteNotification:remoteNotification treatAppAs:isFromDelayLaunch ? SHAppFGBG_BG/*if from delay launch it's must from BG, like Phonegap, so treat as BG*/ : SHAppFGBG_Unknown needComplete:YES fetchCompletionHandler:nil];
-        }
-        UILocalNotification *localNotification = launchOptions[UIApplicationLaunchOptionsLocalNotificationKey];
-        if (localNotification != nil)
-        {
-            [StreetHawk handleLocalNotification:localNotification treatAppAs:isFromDelayLaunch ? SHAppFGBG_BG/*if from delay launch it's must from BG, like Phonegap, so treat as BG*/ : SHAppFGBG_Unknown needComplete:YES fetchCompletionHandler:nil];
-        }
-    }
-#endif
     //Phonegap open url system delegate happen before StreetHawk library get ready, so `sh.shDeeplinking(function(result){alert("open url: " + result)},function(){});` not trigger when App not launch. Check delay launch options, if from open url, give it second chance to trigger again.
     if (isFromDelayLaunch)
     {
         NSURL *openUrl = launchOptions[UIApplicationLaunchOptionsURLKey];
         if (openUrl != nil)
         {
-            [StreetHawk openURL:openUrl sourceApplication:nil annotation:nil];
+            [StreetHawk openURL:openUrl];
         }
     }
     
-#ifdef SH_FEATURE_LATLNG
     if (launchOptions[UIApplicationLaunchOptionsLocationKey] != nil)  //happen when significate location service wake up App, the value is a number such as 1
     {
         //To fix location service after phone power off/on.
         //After phone power on, register significate location service App is wake up, and applicationDidFinishLaunching is called.
         //In this situation, it stays in background, using significant location change.
-        [self.locationManager startMonitorGeoLocationStandard:NO];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_StartMonitorGeoLocation" object:nil];
     }
-#endif
     
     if ([UIApplication sharedApplication].applicationState != UIApplicationStateBackground)/*avoid send visible log when App wake up in background. Here cannot use Active, its status is InActive for normal launch, Background for location launch.*/
     {
         NSMutableDictionary *dictComment = [NSMutableDictionary dictionary];
         [dictComment setObject:@"App launch from not running." forKey:@"action"];
-#ifdef SH_FEATURE_LATLNG
-        if (StreetHawk.locationManager.currentGeoLocation.latitude != 0 && StreetHawk.locationManager.currentGeoLocation.longitude != 0)
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateGeoLocation" object:nil]; //make value update
+        double lat = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LAT] doubleValue];
+        double lng = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LNG] doubleValue];
+        if (lat != 0 && lng != 0)
         {
-            [dictComment setObject:@(StreetHawk.locationManager.currentGeoLocation.latitude) forKey:@"lat"];
-            [dictComment setObject:@(StreetHawk.locationManager.currentGeoLocation.longitude) forKey:@"lng"];
+            [dictComment setObject:@(lat) forKey:@"lat"];
+            [dictComment setObject:@(lng) forKey:@"lng"];
         }
-#endif
         [StreetHawk sendLogForCode:LOG_CODE_APP_VISIBLE withComment:shSerializeObjToJson(dictComment)];
     }
 
@@ -726,7 +680,7 @@
         [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:30*60/*perform background fetch in half an hour to increase chance*/];
     }
     
-    if (StreetHawk.isDebugMode && shAppMode() != SHAppMode_AppStore && shAppMode() != SHAppMode_Enterprise && ([UIApplication sharedApplication].applicationState != UIApplicationStateBackground))  //In debug mode, not live for AppStore, not in background wake up (either by location with option has location key, or by background fetch with optional is nil), check current version and StreetHawk's latest version. Print log if current not the latest version.
+    if (StreetHawk.developmentPlatform == SHDevelopmentPlatform_Native && StreetHawk.isDebugMode && shAppMode() != SHAppMode_AppStore && shAppMode() != SHAppMode_Enterprise && ([UIApplication sharedApplication].applicationState != UIApplicationStateBackground))  //In debug mode, not live for AppStore, not in background wake up (either by location with option has location key, or by background fetch with optional is nil), check current version and StreetHawk's latest version. Print log if current not the latest version.
     {
         SHRequest *requestCheckVersion = [SHRequest requestWithPath:@"core/library/" withParams:@[@"operating_system", @"ios", @"development_platform", shDevelopmentPlatformString()]];
         requestCheckVersion.requestHandler = ^(SHRequest *request)
@@ -772,9 +726,7 @@
         return;
     }
     SHLog(@"Application did enter background with info: %@", notification.userInfo);
-#ifdef SH_FEATURE_LATLNG
-    [self.locationManager startMonitorGeoLocationStandard:NO];
-#endif
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_StartMonitorGeoLocation" object:nil];
     //Go to BG, send exit log.
     [StreetHawk shNotifyPageExit:nil/*for send exit log, not really go to new page*/ clearEnterHistory:NO/*keep history for go to FG send enter*/ logCompleteView:YES/*enter BG complete as bg=true*/];
     //Send install/log when enter background, begin a background task to gain 10 minutes to finish this.
@@ -788,13 +740,14 @@
         {
             NSMutableDictionary *dictComment = [NSMutableDictionary dictionary];
             [dictComment setObject:@"App to BG." forKey:@"action"];
-#ifdef SH_FEATURE_LATLNG
-            if (StreetHawk.locationManager.currentGeoLocation.latitude != 0 && StreetHawk.locationManager.currentGeoLocation.longitude != 0)
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateGeoLocation" object:nil]; //make value update
+            double lat = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LAT] doubleValue];
+            double lng = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LNG] doubleValue];
+            if (lat != 0 && lng != 0)
             {
-                [dictComment setObject:@(StreetHawk.locationManager.currentGeoLocation.latitude) forKey:@"lat"];
-                [dictComment setObject:@(StreetHawk.locationManager.currentGeoLocation.longitude) forKey:@"lng"];
+                [dictComment setObject:@(lat) forKey:@"lat"];
+                [dictComment setObject:@(lng) forKey:@"lng"];
             }
-#endif
             [StreetHawk sendLogForCode:LOG_CODE_APP_INVISIBLE withComment:shSerializeObjToJson(dictComment) forAssocId:0 withResult:100/*ignore*/ withHandler:^(id result, NSError *error)
             {
                 //Once start not cancel the install/log request, there are 10 minutes so make sure it can finish. Call endBackgroundTask after it's done.
@@ -826,13 +779,14 @@
     //Log here instead of applicationDidBecomeActive when interrupt by phone or permission dialog or control center or notification center, this is not called.
     NSMutableDictionary *dictComment = [NSMutableDictionary dictionary];
     [dictComment setObject:@"App opened from BG." forKey:@"action"];
-#ifdef SH_FEATURE_LATLNG
-    if (StreetHawk.locationManager.currentGeoLocation.latitude != 0 && StreetHawk.locationManager.currentGeoLocation.longitude != 0)
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateGeoLocation" object:nil]; //make value update
+    double lat = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LAT] doubleValue];
+    double lng = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LNG] doubleValue];
+    if (lat != 0 && lng != 0)
     {
-        [dictComment setObject:@(StreetHawk.locationManager.currentGeoLocation.latitude) forKey:@"lat"];
-        [dictComment setObject:@(StreetHawk.locationManager.currentGeoLocation.longitude) forKey:@"lng"];
+        [dictComment setObject:@(lat) forKey:@"lat"];
+        [dictComment setObject:@(lng) forKey:@"lng"];
     }
-#endif
     [StreetHawk sendLogForCode:LOG_CODE_APP_VISIBLE withComment:shSerializeObjToJson(dictComment)];
     [StreetHawk shNotifyPageEnter:nil/*not know previoius page, but can get from history*/ sendEnter:YES sendExit:NO/*Not send exit for App go to FG*/];
 }
@@ -848,9 +802,7 @@
 {
     //check app status from background to foreground, most actually return because of "one day not call" limitation.
     [[SHAppStatus sharedInstance] sendAppStatusCheckRequest:NO completeHandler:nil];  //a chance to check if sdk was disabled, may be able to wake up again. Choose this instead of applicationWillEnterForeground because this is also called when App not launched, manually click to open.
-#ifdef SH_FEATURE_NOTIFICATION
-    [StreetHawk setApplicationBadge:0]; //clear badge when App open, for some user they don't like this number and would like to launch App to dismiss it.
-#endif
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_SetBadge_Notification" object:nil userInfo:@{@"badge": @(0)}]; //clear badge when App open, for some user they don't like this number and would like to launch App to dismiss it.
     if (!streetHawkIsEnabled())
     {
         return;
@@ -858,15 +810,11 @@
     SHLog(@"Application did become active with info: %@", notification.userInfo);
     
     //start location services in FG so we get a better lock on location
-#ifdef SH_FEATURE_LATLNG
-    [self.locationManager startMonitorGeoLocationStandard:YES];
-#endif
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_StartMonitorGeoLocation" object:nil];
     if (self.currentInstall != nil)
     {
         //each time when App go to foreground, check push message situation. user can disable App's push message when App is in background, so this is the time to check. Only do it when currentInstall!=nil, because if currentInstall==nil, next will call register install, and that will trigger registerForRemoteNotification.
-#ifdef SH_FEATURE_NOTIFICATION
-        [StreetHawk registerForNotificationAndNotifyServer];
-#endif
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_Register_Notification" object:nil];
         if ([self checkInstallChangeForLaunch] //check whether App or device attribute change, tricky: this must be first, as it sends client upgrade logline. If move to later, self.currentInstall.appKey is always nil when fresh launch, and correct sent client version, so no chance to send the logline.
             || self.currentInstall.appKey == nil || self.currentInstall.appKey.length == 0) //check install attribute is filled, to make sure later visit currentInstall has correct value, meantime fix crash report submitted immediately after App launch
         {
@@ -881,19 +829,7 @@
     //check when App is active
     [self shRegularTask:nil needComplete:NO];
     //check smart push
-#ifdef SH_FEATURE_NOTIFICATION
-    NSObject *smartpushObj = [[NSUserDefaults standardUserDefaults] objectForKey:SMART_PUSH_PAYLOAD];
-    if (smartpushObj != nil && [smartpushObj isKindOfClass:[NSDictionary class]])
-    {
-        [[NSUserDefaults standardUserDefaults] setObject:@"" forKey:SMART_PUSH_PAYLOAD]; //clear, not launch next time.
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        NSDictionary *payload = (NSDictionary *)smartpushObj;
-        if ([StreetHawk.notificationHandler isDefinedCode:payload])
-        {
-            [StreetHawk.notificationHandler handleDefinedUserInfo:payload withAction:SHNotificationActionResult_Unknown treatAppAs:SHAppFGBG_FG forNotificationType:SHNotificationType_SmartPush];
-        }
-    }
-#endif
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_Smart_Notification" object:nil];
 }
 
 - (void)applicationWillTerminateNotificationHandler:(NSNotification *)notification
@@ -905,9 +841,7 @@
     SHLog(@"Application will terminate with info: %@", notification.userInfo);
     //When open App it's active and use standard location service. At this time when power phone off/on, standard location service cannot wake up App.
     //By testing applicationWillTerminate is called in this situation, and it's a chance to switch to significate location service.
-#ifdef SH_FEATURE_LATLNG
-    [self.locationManager startMonitorGeoLocationStandard:NO];
-#endif
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_StartMonitorGeoLocation" object:nil];
     //Same as go to BG, send exit log.
     [StreetHawk shNotifyPageExit:nil/*for send exit log, not really go to new page*/ clearEnterHistory:NO/*keep history for go to FG send enter*/ logCompleteView:YES/*enter BG complete as bg=true*/];
 }
@@ -936,11 +870,14 @@
 
 #pragma mark - UIAppDelegate auto integration
 
-#ifdef SH_FEATURE_NOTIFICATION
-
 - (void)application:(UIApplication *)application didRegisterUserNotificationSettings:(UIUserNotificationSettings *)notificationSettings  //since iOS 8.0
 {
-    [StreetHawk handleUserNotificationSettings:notificationSettings];
+    NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+    if (notificationSettings != nil)
+    {
+        dictUserInfo[@"notificationSettings"] = notificationSettings;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_DidRegisterUserNotification" object:nil userInfo:dictUserInfo];
     if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:didRegisterUserNotificationSettings:)])
     {
         [self.appDelegateInterceptor.secondResponder application:application didRegisterUserNotificationSettings:notificationSettings];
@@ -949,7 +886,12 @@
 
 - (void)application:(UIApplication *)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken
 {
-    [StreetHawk setApnsDeviceToken:deviceToken];
+    NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+    if (deviceToken != nil)
+    {
+        dictUserInfo[@"token"] = deviceToken;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_ReceiveToken_Notification" object:nil userInfo:dictUserInfo];
     if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:didRegisterForRemoteNotificationsWithDeviceToken:)])
     {
         [self.appDelegateInterceptor.secondResponder application:application didRegisterForRemoteNotificationsWithDeviceToken:deviceToken];
@@ -959,17 +901,6 @@
 //called when notification arrives and:
 //1. App in FG, directly call this.
 //2. App in BG notification banner show, click the banner (not the button) and call this.
-//Because of following function, this one ONLY used for iOS 6 now.
-- (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
-{
-    [StreetHawk handleRemoteNotification:userInfo treatAppAs:SHAppFGBG_Unknown needComplete:YES fetchCompletionHandler:nil];
-    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:didReceiveRemoteNotification:)])
-    {
-        [self.appDelegateInterceptor.secondResponder application:application didReceiveRemoteNotification:userInfo];
-    }
-}
-
-//Since iOS 7, same as above but able to perform background task. Because this function, above function actually is NEVER called since iOS 7; in iOS 6 above function is called.
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler
 {
     //Because StreetHawk take over didReceiveRemoteNotification, customer's AppDelegate may have one to call, do that first as this will call completeHandler.
@@ -978,7 +909,18 @@
         [self.appDelegateInterceptor.secondResponder application:application didReceiveRemoteNotification:userInfo];
     }
     BOOL customerAppResponse = [self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:didReceiveRemoteNotification:fetchCompletionHandler:)];
-    [StreetHawk handleRemoteNotification:userInfo treatAppAs:SHAppFGBG_Unknown needComplete:!customerAppResponse fetchCompletionHandler:completionHandler];
+    NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+    if (userInfo != nil)
+    {
+        dictUserInfo[@"payload"] = userInfo;
+    }
+    dictUserInfo[@"fgbg"] = @(SHAppFGBG_Unknown);
+    dictUserInfo[@"needComplete"] = @(!customerAppResponse);
+    if (completionHandler)
+    {
+        dictUserInfo[@"fetchCompletionHandler"] = completionHandler;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_ReceiveRemoteNotification" object:nil userInfo:dictUserInfo];
     if (customerAppResponse)
     {
         [self.appDelegateInterceptor.secondResponder application:application didReceiveRemoteNotification:userInfo fetchCompletionHandler:completionHandler];
@@ -993,7 +935,21 @@
 - (void)application:(UIApplication *)application handleActionWithIdentifier:(NSString *)identifier forRemoteNotification:(NSDictionary *)userInfo completionHandler:(void (^)())completionHandler
 {
     BOOL customerAppResponse = [self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:handleActionWithIdentifier:forRemoteNotification:completionHandler:)];
-    [StreetHawk handleRemoteNotification:userInfo withActionId:identifier needComplete:!customerAppResponse/*if customer needs, not complete in StreetHawk call but let customer AppDelegate to end it*/ completionHandler:completionHandler];
+    NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+    if (userInfo != nil)
+    {
+        dictUserInfo[@"payload"] = userInfo;
+    }
+    if (identifier != nil)
+    {
+        dictUserInfo[@"actionid"] = identifier;
+    }
+    dictUserInfo[@"needComplete"] = @(!customerAppResponse)/*if customer needs, not complete in StreetHawk call but let customer AppDelegate to end it*/;
+    if (completionHandler)
+    {
+        dictUserInfo[@"completionHandler"] = completionHandler;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_HandleRemoteActionButton" object:nil userInfo:dictUserInfo];
     if (customerAppResponse)
     {
         [self.appDelegateInterceptor.secondResponder application:application handleActionWithIdentifier:identifier forRemoteNotification:userInfo completionHandler:completionHandler];
@@ -1002,7 +958,14 @@
 
 - (void)application:(UIApplication *)application didReceiveLocalNotification:(UILocalNotification *)notification
 {
-    [StreetHawk handleLocalNotification:notification treatAppAs:SHAppFGBG_Unknown needComplete:YES fetchCompletionHandler:nil];
+    NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+    if (notification != nil)
+    {
+        dictUserInfo[@"notification"] = notification;
+    }
+    dictUserInfo[@"fgbg"] = @(SHAppFGBG_Unknown);
+    dictUserInfo[@"needComplete"] = @(YES);
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_ReceiveLocalNotification" object:nil userInfo:dictUserInfo];
     if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:didReceiveLocalNotification:)])
     {
         [self.appDelegateInterceptor.secondResponder application:application didReceiveLocalNotification:notification];
@@ -1012,14 +975,26 @@
 - (void)application:(UIApplication *)application handleActionWithIdentifier:(NSString *)identifier forLocalNotification:(UILocalNotification *)notification completionHandler:(void (^)())completionHandler
 {
     BOOL customerAppResponse = [self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:handleActionWithIdentifier:forLocalNotification:completionHandler:)];
-    [StreetHawk handleLocalNotification:notification withActionId:identifier needComplete:!customerAppResponse/*if customer needs, not complete in StreetHawk call but let customer AppDelegate to end it*/ completionHandler:completionHandler];
+    NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+    if (notification != nil)
+    {
+        dictUserInfo[@"notification"] = notification;
+    }
+    if (identifier != nil)
+    {
+        dictUserInfo[@"actionid"] = identifier;
+    }
+    dictUserInfo[@"needComplete"] = @(!customerAppResponse)/*if customer needs, not complete in StreetHawk call but let customer AppDelegate to end it*/;
+    if (completionHandler)
+    {
+        dictUserInfo[@"completionHandler"] = completionHandler;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_HandleLocalActionButton" object:nil userInfo:dictUserInfo];
     if (customerAppResponse)
     {
         [self.appDelegateInterceptor.secondResponder application:application handleActionWithIdentifier:identifier forLocalNotification:notification completionHandler:completionHandler];
     }
 }
-
-#endif
 
 - (void)application:(UIApplication *)application performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler
 {
@@ -1031,6 +1006,43 @@
     }
 }
 
+//since iOS 9 uses this delegate callback, and `- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation` is not called when this new delegate present.
+- (BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary<NSString *,id> *)options
+{
+    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:openURL:options:)])
+    {
+        if ([self.appDelegateInterceptor.secondResponder application:app openURL:url options:options])
+        {
+            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap)
+            {
+                return YES;
+            }
+        }
+    }
+    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:openURL:sourceApplication:annotation:)]) //try old style handle
+    {
+        if ([self.appDelegateInterceptor.secondResponder application:app openURL:url sourceApplication:options[UIApplicationOpenURLOptionsSourceApplicationKey] annotation:options[UIApplicationOpenURLOptionsAnnotationKey]])
+        {
+            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap)
+            {
+                return YES;
+            }
+        }
+    }
+    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:handleOpenURL:)]) //try old style handle
+    {
+        if ([self.appDelegateInterceptor.secondResponder application:app handleOpenURL:url])
+        {
+            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap)
+            {
+                return YES;
+            }
+        }
+    }
+    return [StreetHawk openURL:url];
+}
+
+//before iOS 9 still use this delegate.
 - (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation
 {
     if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:openURL:sourceApplication:annotation:)])
@@ -1047,11 +1059,14 @@
     {
         if ([self.appDelegateInterceptor.secondResponder application:application handleOpenURL:url])
         {
-            return YES;
+            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap)
+            {
+                return YES;
+            }
         }
     }
     //If custom App cannot handle it, try StreetHawk's.
-    return [StreetHawk openURL:url sourceApplication:sourceApplication annotation:annotation];
+    return [StreetHawk openURL:url];
 }
 
 #pragma mark - private functions
@@ -1067,25 +1082,7 @@
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationWillTerminateNotificationHandler:) name:UIApplicationWillTerminateNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidReceiveMemoryWarningNotificationHandler:) name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(timeZoneChangeNotificationHandler:) name:UIApplicationSignificantTimeChangeNotification object:nil];
-    //disable warning as this selector is defined in sub-module category.
-#pragma GCC diagnostic push
-#pragma clang diagnostic push
-#pragma GCC diagnostic ignored "-Wundeclared-selector"
-#pragma clang diagnostic ignored "-Wundeclared-selector"
-#ifdef SH_FEATURE_GROWTH
-    [[NSNotificationCenter defaultCenter] addObserver:[SHGrowth sharedInstance] selector:@selector(installRegistrationSucceededForGrowth:) name:SHInstallRegistrationSuccessNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:[SHGrowth sharedInstance] selector:@selector(installUpdateSucceededForGrowth:) name:SHInstallUpdateSuccessNotification object:nil];
-#endif
-#ifdef SH_FEATURE_NOTIFICATION
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appStatusChange:) name:SHAppStatusChangeNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(installRegistrationSucceededForNotification:) name:SHInstallRegistrationSuccessNotification object:nil]; //first registerForRemoteNotification need be called after register install, because it needs to be updated to an install id.
-#endif
-#ifdef SH_FEATURE_CRASH
-    self.isSendingCrashReport = NO;  //must use `self` instead of `StreetHawk` as this is called in `init`.
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(installUpdateSucceededForCrash:) name:SHInstallUpdateSuccessNotification object:nil];
-#endif
-#pragma GCC diagnostic pop
-#pragma clang diagnostic pop
 }
 
 - (void)checkUtcOffsetUpdate
@@ -1126,6 +1123,71 @@
         }];
         [self.backgroundQueue addOperation:op];
     }
+}
+
+- (void)sendModuleTags
+{
+    if (StreetHawk.developmentPlatform == SHDevelopmentPlatform_Native || StreetHawk.developmentPlatform == SHDevelopmentPlatform_Phonegap || StreetHawk.developmentPlatform == SHDevelopmentPlatform_Xamarin) //all these can reflect bridge class.
+    {
+        Class growthBridge = NSClassFromString(@"SHGrowthBridge");
+        NSString *growthCurrent = (growthBridge == nil) ? @"false" : @"true";
+        NSString *growthSent = [[NSUserDefaults standardUserDefaults] objectForKey:@"sh_module_growth"];
+        if ([growthCurrent compare:growthSent] != NSOrderedSame)
+        {
+            [StreetHawk tagString:growthCurrent forKey:@"sh_module_growth"];
+            [[NSUserDefaults standardUserDefaults] setObject:growthCurrent forKey:@"sh_module_growth"];
+        }
+        Class notificationBridge = NSClassFromString(@"SHNotificationBridge");
+        NSString *pushCurrent = (notificationBridge == nil) ? @"false" : @"true";
+        NSString *pushSent = [[NSUserDefaults standardUserDefaults] objectForKey:@"sh_module_push"];
+        if ([pushCurrent compare:pushSent] != NSOrderedSame)
+        {
+            [StreetHawk tagString:pushCurrent forKey:@"sh_module_push"];
+            [[NSUserDefaults standardUserDefaults] setObject:pushCurrent forKey:@"sh_module_push"];
+        }
+        Class locationBridge = NSClassFromString(@"SHLocationBridge");
+        NSString *locationCurrent = (locationBridge == nil) ? @"false" : @"true";
+        NSString *locationSent = [[NSUserDefaults standardUserDefaults] objectForKey:@"sh_module_location"];
+        if ([locationCurrent compare:locationSent] != NSOrderedSame)
+        {
+            [StreetHawk tagString:locationCurrent forKey:@"sh_module_location"];
+            [[NSUserDefaults standardUserDefaults] setObject:locationCurrent forKey:@"sh_module_location"];
+        }
+        Class geofenceBridge = NSClassFromString(@"SHGeofenceBridge");
+        NSString *geofenceCurrent = (geofenceBridge == nil) ? @"false" : @"true";
+        NSString *geofenceSent = [[NSUserDefaults standardUserDefaults] objectForKey:@"sh_module_geofence"];
+        if ([geofenceCurrent compare:geofenceSent] != NSOrderedSame)
+        {
+            [StreetHawk tagString:geofenceCurrent forKey:@"sh_module_geofence"];
+            [[NSUserDefaults standardUserDefaults] setObject:geofenceCurrent forKey:@"sh_module_geofence"];
+        }
+        Class beaconBridge = NSClassFromString(@"SHBeaconBridge");
+        NSString *iBeaconCurrent = (beaconBridge == nil) ? @"false" : @"true";
+        NSString *iBeaconSent = [[NSUserDefaults standardUserDefaults] objectForKey:@"sh_module_beacon"];
+        if ([iBeaconCurrent compare:iBeaconSent] != NSOrderedSame)
+        {
+            [StreetHawk tagString:iBeaconCurrent forKey:@"sh_module_beacon"];
+            [[NSUserDefaults standardUserDefaults] setObject:iBeaconCurrent forKey:@"sh_module_beacon"];
+        }
+        Class crashBridge = NSClassFromString(@"SHCrashBridge");
+        NSString *crashCurrent = (crashBridge == nil) ? @"false" : @"true";
+        NSString *crashSent = [[NSUserDefaults standardUserDefaults] objectForKey:@"sh_module_crash"];
+        if ([crashCurrent compare:crashSent] != NSOrderedSame)
+        {
+            [StreetHawk tagString:crashCurrent forKey:@"sh_module_crash"];
+            [[NSUserDefaults standardUserDefaults] setObject:crashCurrent forKey:@"sh_module_crash"];
+        }
+        Class feedBridge = NSClassFromString(@"SHFeedBridge");
+        NSString *feedsCurrent = (feedBridge == nil) ? @"false" : @"true";
+        NSString *feedsSent = [[NSUserDefaults standardUserDefaults] objectForKey:@"sh_module_feeds"];
+        if ([feedsCurrent compare:feedsSent] != NSOrderedSame)
+        {
+            [StreetHawk tagString:feedsCurrent forKey:@"sh_module_feeds"];
+            [[NSUserDefaults standardUserDefaults] setObject:feedsCurrent forKey:@"sh_module_feeds"];
+        }
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+    //other cross platform will be add when implement them.
 }
 
 - (void)endBackgroundTask:(UIBackgroundTaskIdentifier)backgroundTask
@@ -1455,9 +1517,9 @@
                                    [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithInt:shAppMode()] forKey:SentInstall_Mode];
                                    [[NSUserDefaults standardUserDefaults] setObject:shGetCarrierName() forKey:SentInstall_Carrier];
                                    [[NSUserDefaults standardUserDefaults] setObject:[UIDevice currentDevice].systemVersion forKey:SentInstall_OSVersion];
-#ifdef SH_FEATURE_IBEACON
-                                   [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithInt:StreetHawk.locationManager.iBeaconSupportState] forKey:SentInstall_IBeacon];
-#endif
+                                   [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateiBeaconStatus" object:nil];
+                                   int iBeaconSupportStatus = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_BEACON_iBEACON] intValue];
+                                   [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithInt:iBeaconSupportStatus] forKey:SentInstall_IBeacon];
                                    [[NSUserDefaults standardUserDefaults] synchronize];
                                    NSDictionary *userInfo = @{SHInstallNotification_kInstall: self.currentInstall};
                                    [[NSNotificationCenter defaultCenter] postNotificationName:SHInstallUpdateSuccessNotification object:self userInfo:userInfo];
@@ -1489,9 +1551,9 @@
                                    [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithInt:shAppMode()] forKey:SentInstall_Mode];
                                    [[NSUserDefaults standardUserDefaults] setObject:shGetCarrierName() forKey:SentInstall_Carrier];
                                    [[NSUserDefaults standardUserDefaults] setObject:[UIDevice currentDevice].systemVersion forKey:SentInstall_OSVersion];
-#ifdef SH_FEATURE_IBEACON
-                                   [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithInt:StreetHawk.locationManager.iBeaconSupportState] forKey:SentInstall_IBeacon];
-#endif
+                                   [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateiBeaconStatus" object:nil];
+                                   int iBeaconSupportStatus = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_BEACON_iBEACON] intValue];
+                                   [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithInt:iBeaconSupportStatus] forKey:SentInstall_IBeacon];
                                    [[NSUserDefaults standardUserDefaults] synchronize];
                                    NSDictionary *userInfo = @{SHInstallNotification_kInstall: self.currentInstall};
                                    [[NSNotificationCenter defaultCenter] postNotificationName:SHInstallRegistrationSuccessNotification object:self userInfo:userInfo];
@@ -1518,9 +1580,7 @@ NSString *SentInstall_ShVersion = @"SentInstall_ShVersion";
 NSString *SentInstall_Mode = @"SentInstall_Mode";
 NSString *SentInstall_Carrier = @"SentInstall_Carrier";
 NSString *SentInstall_OSVersion = @"SentInstall_OSVersion";
-#ifdef SH_FEATURE_IBEACON
 NSString *SentInstall_IBeacon = @"SentInstall_IBeacon";
-#endif
 
 -(BOOL)checkInstallChangeForLaunch
 {
@@ -1529,22 +1589,26 @@ NSString *SentInstall_IBeacon = @"SentInstall_IBeacon";
     NSString *sentShVersion = [[NSUserDefaults standardUserDefaults] objectForKey:SentInstall_ShVersion];
     NSString *sentCarrier = [[NSUserDefaults standardUserDefaults] objectForKey:SentInstall_Carrier];
     NSString *sentOsVersion = [[NSUserDefaults standardUserDefaults] objectForKey:SentInstall_OSVersion];
-#ifdef SH_FEATURE_IBEACON
-    SHiBeaconState sentiBeacon = [[[NSUserDefaults standardUserDefaults] objectForKey:SentInstall_IBeacon] intValue];
-    SHiBeaconState currentiBeacon = StreetHawk.locationManager.iBeaconSupportState;
-    return ((sentAppKey != nil && sentAppKey.length > 0 && ![sentAppKey isEqualToString:StreetHawk.appKey])
-            || (sentClientVersion != nil && sentClientVersion.length > 0 && ![sentClientVersion isEqualToString:StreetHawk.clientVersion])
-            || (sentShVersion != nil && sentShVersion.length > 0 && ![sentShVersion isEqualToString:StreetHawk.version])
-            || (sentCarrier != nil && sentCarrier.length > 0 && ![sentCarrier isEqualToString:shGetCarrierName()])
-            || (sentOsVersion != nil && sentOsVersion.length > 0 && ![sentOsVersion isEqualToString:[UIDevice currentDevice].systemVersion])
-            || (sentiBeacon == SHiBeaconState_Unknown)/*sent is unknown, update install and refresh sent again*/ || (currentiBeacon != SHiBeaconState_Unknown && sentiBeacon != currentiBeacon/*current change*/));
-#else
-    return ((sentAppKey != nil && sentAppKey.length > 0 && ![sentAppKey isEqualToString:StreetHawk.appKey])
-            || (sentClientVersion != nil && sentClientVersion.length > 0 && ![sentClientVersion isEqualToString:StreetHawk.clientVersion])
-            || (sentShVersion != nil && sentShVersion.length > 0 && ![sentShVersion isEqualToString:StreetHawk.version])
-            || (sentCarrier != nil && sentCarrier.length > 0 && ![sentCarrier isEqualToString:shGetCarrierName()])
-            || (sentOsVersion != nil && sentOsVersion.length > 0 && ![sentOsVersion isEqualToString:[UIDevice currentDevice].systemVersion]));
-#endif
+    int sentiBeacon = [[[NSUserDefaults standardUserDefaults] objectForKey:SentInstall_IBeacon] intValue];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateiBeaconStatus" object:nil];
+    int currentiBeacon = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_BEACON_iBEACON] intValue];
+    if (currentiBeacon != 3/*SHiBeaconState_Ignore*/)
+    {
+        return ((sentAppKey != nil && sentAppKey.length > 0 && ![sentAppKey isEqualToString:StreetHawk.appKey])
+                || (sentClientVersion != nil && sentClientVersion.length > 0 && ![sentClientVersion isEqualToString:StreetHawk.clientVersion])
+                || (sentShVersion != nil && sentShVersion.length > 0 && ![sentShVersion isEqualToString:StreetHawk.version])
+                || (sentCarrier != nil && sentCarrier.length > 0 && ![sentCarrier isEqualToString:shGetCarrierName()])
+                || (sentOsVersion != nil && sentOsVersion.length > 0 && ![sentOsVersion isEqualToString:[UIDevice currentDevice].systemVersion])
+                || (sentiBeacon == 0/*SHiBeaconState_Unknown*/)/*sent is unknown, update install and refresh sent again*/ || (currentiBeacon != 0/*SHiBeaconState_Unknown*/ && sentiBeacon != currentiBeacon/*current change*/));
+    }
+    else
+    {
+        return ((sentAppKey != nil && sentAppKey.length > 0 && ![sentAppKey isEqualToString:StreetHawk.appKey])
+                || (sentClientVersion != nil && sentClientVersion.length > 0 && ![sentClientVersion isEqualToString:StreetHawk.clientVersion])
+                || (sentShVersion != nil && sentShVersion.length > 0 && ![sentShVersion isEqualToString:StreetHawk.version])
+                || (sentCarrier != nil && sentCarrier.length > 0 && ![sentCarrier isEqualToString:shGetCarrierName()])
+                || (sentOsVersion != nil && sentOsVersion.length > 0 && ![sentOsVersion isEqualToString:[UIDevice currentDevice].systemVersion]));
+    }
 }
 
 #pragma mark - private functions

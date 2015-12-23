@@ -30,6 +30,11 @@
 #define LOCATION_DENIED_SENT        @"LOCATION_DENIED_SENT" //a flag indicates this App has sent location denied log to avoid send one more time.
 #define NETWORK_RECOVER_TIME        @"NETWORK_RECOVER_TIME" //Record time when network from not-connected to connected(either cellura or Wifi). If it's 0 means current network not connected; if it's number means last time from non-connected to connected.
 
+#define SH_FG_INTERVAL  @"SH_FG_INTERVAL" //value for location update time interval in FG
+#define SH_FG_DISTANCE  @"SH_FG_DISTANCE" //value for location update distance in FG
+#define SH_BG_INTERVAL  @"SH_BG_INTERVAL" //value for location update time interval in BG
+#define SH_BG_DISTANCE  @"SH_BG_DISTANCE" //value for location update distance in BG
+
 @interface SHLocationManager()
 
 @property (nonatomic, strong) CLLocationManager *locationManager;  //The internal operating iOS object.
@@ -57,6 +62,19 @@
 @implementation SHLocationManager
 
 #pragma mark - life cycle
+
++ (void)initialize
+{
+    if ([self class] == [SHLocationManager class])
+    {
+        NSMutableDictionary *initialDefaults = [NSMutableDictionary dictionary];
+        initialDefaults[SH_FG_INTERVAL] = @(SHLocation_FG_Interval);
+        initialDefaults[SH_FG_DISTANCE] = @(SHLocation_FG_Distance);
+        initialDefaults[SH_BG_INTERVAL] = @(SHLocation_BG_Interval);
+        initialDefaults[SH_BG_DISTANCE] = @(SHLocation_BG_Distance);
+        [[NSUserDefaults standardUserDefaults] registerDefaults:initialDefaults];
+    }
+}
 
 + (SHLocationManager *)sharedInstance
 {
@@ -92,20 +110,14 @@
     self.desiredAccuracy = kCLLocationAccuracyHundredMeters;
     self.distanceFilter = 10.0f;
     
-    //initialize report time and distance
-    self.fgMinTimeBetweenEvents = 60;  // every minute
-    self.fgMinDistanceBetweenEvents = 100.0f;
-    self.bgMinTimeBetweenEvents = 300; // every 5 minutes
-    self.bgMinDistanceBetweenEvents = 500.0f;
-    
     //initialize detecting location
-    self.currentGeoLocationValue = CLLocationCoordinate2DMake(0, 0); //all location set to 0 (means not detected) after restart, not use local cache. It should show real device location, cache has no meaning.
+    self.currentGeoLocationValue = CLLocationCoordinate2DMake(0, 0); //all location set to 0 (means not detected) after restart, not use local cache. It should show real device location, cache has no meaning. Cache SH_GEOLOCATION_LAT and SH_GEOLOCATION_LNG are also set to (0, 0) when launch.
     self.sentGeoLocationValue = CLLocationCoordinate2DMake(0, 0); //not sent when App launch.
     self.sentGeoLocationTime = 0;  //not update yet
     _geolocationMonitorState = SHGeoLocationMonitorState_Stopped;
     
     //Give Phonegap a chance to call location service. Ticket https://bitbucket.org/shawk/streethawk/issue/384/phonegap-location-service-not-start-until.
-    [self startMonitorGeoLocationStandard:[UIApplication sharedApplication].applicationState != UIApplicationStateBackground];
+    [self startMonitorGeoLocationStandard:(!StreetHawk.reportWorkHomeLocationOnly && [UIApplication sharedApplication].applicationState != UIApplicationStateBackground)];
     
     //no need to start monitor server care iBeacon list, because it start and no code to stop, means when App launch (iOS 7 need manual launch, iOS 7.1+ automatically launch), it continues to monitor region and all related delegate works. Test by monitor a region in SHSample, kill App, enter/exit region, notification happen and output prints.
 }
@@ -194,24 +206,116 @@
 
 #pragma mark - set geo location service properties
 
--(CLLocationAccuracy)desiredAccuracy
+- (CLLocationAccuracy)desiredAccuracy
 {
     return self.locationManager.desiredAccuracy;
 }
 
--(void)setDesiredAccuracy:(CLLocationAccuracy)accuracy
+- (void)setDesiredAccuracy:(CLLocationAccuracy)accuracy
 {
     self.locationManager.desiredAccuracy = accuracy;
 }
 
--(CLLocationDistance)distanceFilter
+- (CLLocationDistance)distanceFilter
 {
     return self.locationManager.distanceFilter;
 }
 
--(void)setDistanceFilter:(CLLocationDistance)distance
+- (void)setDistanceFilter:(CLLocationDistance)distance
 {
     self.locationManager.distanceFilter = distance;
+}
+
+- (NSTimeInterval)fgMinTimeBetweenEvents
+{
+    NSTimeInterval value = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_FG_INTERVAL] doubleValue];
+    NSAssert(value >= 0, @"Not find suitable value for SH_FG_INTERVAL");
+    if (value >= 0)
+    {
+        return value;
+    }
+    else
+    {
+        return SHLocation_FG_Interval;
+    }
+}
+
+- (void)setFgMinTimeBetweenEvents:(NSTimeInterval)fgMinTimeBetweenEvents
+{
+    if (fgMinTimeBetweenEvents >= 0)
+    {
+        [[NSUserDefaults standardUserDefaults] setObject:@(fgMinTimeBetweenEvents) forKey:SH_FG_INTERVAL];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+}
+
+- (float)fgMinDistanceBetweenEvents
+{
+    float value = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_FG_DISTANCE] floatValue];
+    NSAssert(value >= 0, @"Not find suitable value for SH_FG_DISTANCE");
+    if (value >= 0)
+    {
+        return value;
+    }
+    else
+    {
+        return SHLocation_FG_Distance;
+    }
+}
+
+- (void)setFgMinDistanceBetweenEvents:(float)fgMinDistanceBetweenEvents
+{
+    if (fgMinDistanceBetweenEvents >= 0)
+    {
+        [[NSUserDefaults standardUserDefaults] setObject:@(fgMinDistanceBetweenEvents) forKey:SH_FG_DISTANCE];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+}
+
+- (NSTimeInterval)bgMinTimeBetweenEvents
+{
+    NSTimeInterval value = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_BG_INTERVAL] doubleValue];
+    NSAssert(value >= 0, @"Not find suitable value for SH_BG_INTERVAL");
+    if (value >= 0)
+    {
+        return value;
+    }
+    else
+    {
+        return SHLocation_BG_Interval;
+    }
+}
+
+- (void)setBgMinTimeBetweenEvents:(NSTimeInterval)bgMinTimeBetweenEvents
+{
+    if (bgMinTimeBetweenEvents >= 0)
+    {
+        [[NSUserDefaults standardUserDefaults] setObject:@(bgMinTimeBetweenEvents) forKey:SH_BG_INTERVAL];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+}
+
+- (float)bgMinDistanceBetweenEvents
+{
+    float value = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_BG_DISTANCE] doubleValue];
+    NSAssert(value >= 0, @"Not find suitable value for SH_BG_DISTANCE");
+    if (value >= 0)
+    {
+        return value;
+    }
+    else
+    {
+        return SHLocation_BG_Distance;
+    }
+}
+
+- (void)setBgMinDistanceBetweenEvents:(float)bgMinDistanceBetweenEvents
+{
+    if (bgMinDistanceBetweenEvents >= 0)
+    {
+        [[NSUserDefaults standardUserDefaults] setObject:@(bgMinDistanceBetweenEvents) forKey:SH_BG_DISTANCE];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
 }
 
 #pragma mark - detecting result
@@ -448,8 +552,6 @@
     }
 }
 
-#ifdef SH_FEATURE_IBEACON
-
 - (BOOL)startRangeiBeaconRegion:(CLBeaconRegion *)iBeaconRegion
 {
     if (!streetHawkIsEnabled())
@@ -513,8 +615,6 @@
     }
 }
 
-#endif
-
 #pragma mark - private functions
 
 - (double)distanceSquaredForLat1:(double)lat1 lng1:(double)lng1 lat2:(double)lat2 lng2:(double)lng2
@@ -531,7 +631,10 @@
 
 - (void)sendGeoLocationUpdate
 {
-#ifdef SH_FEATURE_LATLNG
+    if (StreetHawk.reportWorkHomeLocationOnly)
+    {
+        return; //not send logline 20.
+    }
     if (self.currentGeoLocation.latitude == 0 || self.currentGeoLocation.longitude == 0)
     {
         return; //if current location is not detected, not send log 20.
@@ -541,7 +644,7 @@
         return; //only do location 20 when network available
     }
     BOOL isFG = ([UIApplication sharedApplication].applicationState != UIApplicationStateBackground); //When asking for permission it's InActive
-    double minTimeBWEvents = isFG ? self.fgMinTimeBetweenEvents : self.bgMinTimeBetweenEvents;
+    double minTimeBWEvents = isFG ? self.fgMinTimeBetweenEvents * 60 : self.bgMinTimeBetweenEvents * 60;
     double minDistanceBWEvents = isFG ? self.fgMinDistanceBetweenEvents : self.bgMinDistanceBetweenEvents;
     NSTimeInterval timeDelta = [[NSDate date] timeIntervalSince1970] - self.sentGeoLocationTime;
     double distSquared = [self distanceSquaredForLat1:self.currentGeoLocation.latitude lng1:self.currentGeoLocation.longitude lat2:self.sentGeoLocationValue.latitude lng2:self.sentGeoLocationValue.longitude];
@@ -554,9 +657,10 @@
         SHLog(lmLog);
         self.sentGeoLocationValue = self.currentGeoLocation; //do it early
         self.sentGeoLocationTime = [[NSDate date] timeIntervalSince1970];
-        [StreetHawk sendLogForCode:LOG_CODE_LOCATION_GEO withComment:shSerializeObjToJson(dictLoc)];
+        //Only send logline 20 when have location bridge. Above check must kept here because the internal variables cannot move to SHLocationBridge.
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_SendGeoLocationLogline" object:nil userInfo:@{@"comment": NONULL(shSerializeObjToJson(dictLoc))}];
+
     }
-#endif
 }
 
 - (NSString *)formatBeaconRegion:(CLBeaconRegion *)region
@@ -800,8 +904,6 @@
     [[NSNotificationCenter defaultCenter] postNotification:notification];
 }
 
-#ifdef SH_FEATURE_IBEACON
-
 - (void)locationManager:(CLLocationManager *)manager didRangeBeacons:(NSArray *)beacons inRegion:(CLBeaconRegion *)region
 {
     if (!streetHawkIsEnabled())
@@ -833,8 +935,6 @@
     NSNotification *notification = [NSNotification notificationWithName:SHLMRangeiBeaconFailNotification object:self userInfo:userInfo];
     [[NSNotificationCenter defaultCenter] postNotification:notification];
 }
-
-#endif
 
 - (void)locationManager:(CLLocationManager *)manager didChangeAuthorizationStatus:(CLAuthorizationStatus)status
 {

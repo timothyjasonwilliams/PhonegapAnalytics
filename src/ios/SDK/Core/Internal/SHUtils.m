@@ -425,7 +425,6 @@ UIWindow *shGetPresentWindow()
 #define StreetHawkCoreRES_BUNDLE ([[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle"]] : nil)
 #define StreetHawkCoreRES_Titanium_BUNDLE ([[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"modules/com.streethawk"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"modules/com.streethawk"]] : nil)
 #define StreetHawkCoreRES_EmbeddedFull_BUNDLE ([[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"Frameworks/StreetHawkCore.framework"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"Frameworks/StreetHawkCore.framework"]] : nil)
-#define StreetHawkCoreRES_EmbeddedCompact_BUNDLE ([[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"Frameworks/StreetHawkCoreCompact.framework"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"Frameworks/StreetHawkCoreCompact.framework"]] : nil)
 
 NSBundle *shFindBundleForResource(NSString *resourceName, NSString *type, BOOL mandatory)
 {
@@ -449,11 +448,7 @@ NSBundle *shFindBundleForResource(NSString *resourceName, NSString *type, BOOL m
     else if (StreetHawkCoreRES_EmbeddedFull_BUNDLE != nil && [[NSFileManager defaultManager] fileExistsAtPath:[StreetHawkCoreRES_EmbeddedFull_BUNDLE pathForResource:resourceName ofType:type]])  //check Embedded binary framework
     {
         bundle = StreetHawkCoreRES_EmbeddedFull_BUNDLE;
-    }
-    else if (StreetHawkCoreRES_EmbeddedCompact_BUNDLE != nil && [[NSFileManager defaultManager] fileExistsAtPath:[StreetHawkCoreRES_EmbeddedCompact_BUNDLE pathForResource:resourceName ofType:type]])  //check Embedded binary framework
-    {
-        bundle = StreetHawkCoreRES_EmbeddedCompact_BUNDLE;
-    }
+    }    
     if (mandatory)
     {
         assert(bundle != nil && "Cannot find suitable bundle");
@@ -481,11 +476,7 @@ NSString *shLocalizedString(NSString *key, NSString *defaultStr)
         if (StreetHawkCoreRES_EmbeddedFull_BUNDLE != nil && (shStrIsEmpty(retStr) || [retStr isEqualToString:key]))
         {
             retStr = NSLocalizedStringWithDefaultValue(key, nil, StreetHawkCoreRES_EmbeddedFull_BUNDLE, defaultStr, nil);
-        }
-        if (StreetHawkCoreRES_EmbeddedCompact_BUNDLE != nil && (shStrIsEmpty(retStr) || [retStr isEqualToString:key]))
-        {
-            retStr = NSLocalizedStringWithDefaultValue(key, nil, StreetHawkCoreRES_EmbeddedCompact_BUNDLE, defaultStr, nil);
-        }
+        }        
         if (defaultStr != nil && defaultStr.length > 0 && (shStrIsEmpty(retStr) || [retStr isEqualToString:key]))
         {
             retStr = defaultStr;
@@ -757,4 +748,43 @@ BOOL streetHawkIsEnabled()
 BOOL shStrIsEmpty(NSString *str)
 {
     return (str == nil || str.length == 0);
+}
+
+BOOL shArrayIsSame(NSArray *array1, NSArray *array2)
+{
+    if (array1 == nil && array2 == nil)
+    {
+        return YES;
+    }
+    if (array1 == nil && array2 != nil)
+    {
+        return NO;
+    }
+    if (array1 != nil && array2 == nil)
+    {
+        return NO;
+    }
+    if (array1.count != array2.count)
+    {
+        return NO;
+    }
+    for (id item1 in array1)
+    {
+        BOOL isFound = NO;
+        for (id item2 in array2)
+        {
+            NSString *value1 = [NSString stringWithFormat:@"%@", item1];
+            NSString *value2 = [NSString stringWithFormat:@"%@", item2];
+            if ([value1 compare:value2] == NSOrderedSame)
+            {
+                isFound = YES;
+                break;
+            }
+        }
+        if (!isFound)
+        {
+            return NO;
+        }
+    }
+    return YES;
 }

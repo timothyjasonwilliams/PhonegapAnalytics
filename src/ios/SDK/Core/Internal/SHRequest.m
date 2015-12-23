@@ -29,10 +29,6 @@
 #import "SHInstall.h" //for `StreetHawk.currentInstall.suid`
 #import "SHAppStatus.h" //for alive host
 #import "SHUtils.h" //for shAppendParamsArrayToString
-#ifdef SH_FEATURE_NOTIFICATION
-#import "SHApp+Notification.h" //for notificationHandler
-#import "SHNotificationHandler.h" //for call handle function
-#endif
 
 @interface SHRequest()
 {
@@ -657,23 +653,17 @@
                     //check "ibeacon"
                     if ([dictStatus.allKeys containsObject:@"ibeacon"])
                     {
-#ifdef SH_FEATURE_IBEACON
-                        [SHAppStatus sharedInstance].iBeaconTimeStamp = dictStatus[@"ibeacon"]; //it may be nil
-#endif
+                        [SHAppStatus sharedInstance].iBeaconTimestamp = dictStatus[@"ibeacon"]; //it may be nil
                     }
                     //check "geofences"
                     if ([dictStatus.allKeys containsObject:@"geofences"])
                     {
-#ifdef SH_FEATURE_GEOFENCE
-                        [SHAppStatus sharedInstance].geofenceTimeStamp = dictStatus[@"geofences"];
-#endif
+                        [SHAppStatus sharedInstance].geofenceTimestamp = dictStatus[@"geofences"];
                     }
                     //check "feed"
                     if ([dictStatus.allKeys containsObject:@"feed"])
                     {
-#ifdef SH_FEATURE_FEED
-                        [SHAppStatus sharedInstance].feedTimeStamp = dictStatus[@"feed"];
-#endif
+                        [SHAppStatus sharedInstance].feedTimestamp = dictStatus[@"feed"];
                     }
                     //check "reregister"
                     if ([dictStatus.allKeys containsObject:@"reregister"])
@@ -685,25 +675,24 @@
                     {
                         [SHAppStatus sharedInstance].appstoreId = dictStatus[@"app_store_id"];
                     }
+                    //check "disable_logs"
+                    [SHAppStatus sharedInstance].logDisableCodes = dictStatus[@"disable_logs"]; //directly pass nil
+                    //check "priority"
+                    [SHAppStatus sharedInstance].logPriorityCodes = dictStatus[@"priority"];
+                    //refresh app_status check time
+                    [[SHAppStatus sharedInstance] recordCheckTime];
                 }
                 //response may have "push" for smart push.
                 if ([dict.allKeys containsObject:@"push"] && [dict[@"push"] isKindOfClass:[NSDictionary class]])
                 {
-#ifdef SH_FEATURE_NOTIFICATION
                     NSDictionary *payload = (NSDictionary *)dict[@"push"]; //it's same format as remote notification.
+                    [[NSUserDefaults standardUserDefaults] setObject:payload forKey:SMART_PUSH_PAYLOAD];
+                    [[NSUserDefaults standardUserDefaults] synchronize];
+                    //App not in FG, store locally and wait for `applicationDidBecomeActiveNotificationHandler` to handle it.
                     if ([UIApplication sharedApplication].applicationState == UIApplicationStateActive) //App in FG, directly handle this smart push.
                     {
-                        if ([StreetHawk.notificationHandler isDefinedCode:payload])
-                        {
-                            [StreetHawk.notificationHandler handleDefinedUserInfo:payload withAction:SHNotificationActionResult_Unknown treatAppAs:SHAppFGBG_FG forNotificationType:SHNotificationType_SmartPush];
-                        }
+                        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_Smart_Notification" object:nil];
                     }
-                    else //App not in FG, store locally and wait for `applicationDidBecomeActiveNotificationHandler` to handle it.
-                    {
-                        [[NSUserDefaults standardUserDefaults] setObject:payload forKey:SMART_PUSH_PAYLOAD];
-                        [[NSUserDefaults standardUserDefaults] synchronize];
-                    }
-#endif
                 }
             }
         }

@@ -18,8 +18,6 @@
 #import <Foundation/Foundation.h>
 #import "SHRequest.h" //for enum SHHostVersion
 
-#define APPSTATUS_FEED_FETCH_TIME           @"APPSTATUS_FEED_FETCH_TIME"  //last successfully fetch feed time
-
 /**
  Notification sent when server returns `app_status` different from local. Its user info is empty, read singletone `[SHAppStatus sharedInstance]` to get current situation.
  */
@@ -72,17 +70,17 @@ extern NSString * const SHAppStatusChangeNotification;
 /**
  Match to `app_status` dictionary's `ibeacon`. It's a time stamp of server provided iBeacon list. If the time stamp is newer than client fetch time, client should fetch iBeacon list again and monitor new list; if the time stamp is NULL, client should clear cached iBeacon and stop monitor.
  */
-@property (nonatomic, strong) NSString *iBeaconTimeStamp;
+@property (nonatomic, strong) NSString *iBeaconTimestamp;
 
 /**
  Match to `app_status` dictionary's `geofences`. It's a time stamp of server provided geofence list. If the time stamp is newer than client fetch time, client should fetch geofence list again and monitor new list; if the time stamp is NULL or empty, client should clear cached geofence and stop monitor.
  */
-@property (nonatomic, strong) NSString *geofenceTimeStamp;
+@property (nonatomic, strong) NSString *geofenceTimestamp;
 
 /**
  Match to `app_status` dictionary's `feed`. It's a time stamp of server last modify feeds. If the time stamp is newer than client fetch time, client should fetch feeds again and trigger customer's callback; if the time stamp is NULL or older than client fetch time, do nothing.
  */
-@property (nonatomic, strong) NSString *feedTimeStamp;
+@property (nonatomic, strong) NSString *feedTimestamp;
 
 /**
  Match to `app_status` dictionary's `reregister`. In case it is given and set to true let the install register one more time.
@@ -94,6 +92,16 @@ extern NSString * const SHAppStatusChangeNotification;
  */
 @property (nonatomic, strong) NSString *appstoreId;
 
+/**
+ Match to `app_status` dictionary's `disable_logs`. It's for setting up disabled logline code. It would be nil means clear, or array of code list.
+ */
+@property (nonatomic, strong) NSObject *logDisableCodes;
+
+/**
+ Match to `app_status` dictionary's `priority`. It's for setting up priority logline code. It would be nil means clear, or array of code list.
+ */
+@property (nonatomic, strong) NSObject *logPriorityCodes;
+
 /** @name Functions */
 
 /**
@@ -102,5 +110,10 @@ extern NSString * const SHAppStatusChangeNotification;
  @param handler Handler is triggered when check complete. If not send request handler(nil), otherwise handler(request).
  */
 - (void)sendAppStatusCheckRequest:(BOOL)force completeHandler:(SHRequestHandler)handler;
+
+/**
+ Save this check time to avoid frequent check. No matter any property changed or not, record the time.
+ */
+- (void)recordCheckTime;
 
 @end

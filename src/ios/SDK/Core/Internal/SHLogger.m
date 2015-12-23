@@ -18,15 +18,11 @@
 #import "SHLogger.h"
 //header from StreetHawk
 #import "SHAppStatus.h" //for `uploadLocationChange`
-#if defined(SH_FEATURE_LATLNG) || defined(SH_FEATURE_GEOFENCE) || defined(SH_FEATURE_IBEACON)
-#import "SHLocationManager.h" //for get lat/lng
-#endif
 #import "SHApp.h" //for register install
 #import "SHUtils.h" //for streetHawkIsEnabled
 
 #define tableName @"table_log" //not change table name, if need upgrade db schema, change to another file.
 #define LOG_UPLOAD_INTERVAL 50  //local has this number then upload
-#define LOAD_LOG_NUMBER     100 //when upload select how many
 
 #define FGBG_SESSION    @"FGBG_SESSION" //record current session id
 
@@ -62,13 +58,13 @@ enum
 
 //Log the information into local sqlite database. Normal events are uploaded after enough number. Special events are logged and uploaded immediately. This function has the flexibility, however for convenience [StreetHawk sendLogForCode:withComment:] is recommended.
 - (void)logComment:(NSString *)comment atTime:(NSDate *)created forCode:(NSInteger)code forAssocId:(NSInteger)assocId withResult:(NSInteger)result withHandler:(SHCallbackHandler)handler;
-//Uploads local sqlite's log records to the server. This is automatically called if system determine needs to upload, or user can manually call it to trigger an upload.
-- (void)uploadLogsToServer:(NSInteger)numRecords withHandler:(SHCallbackHandler)handler;
+//Uploads local sqlite's log records to the server. This is automatically called if system determine needs to upload.
+- (void)uploadLogsToServerWithHandler:(SHCallbackHandler)handler;
 
 //Open SQLite file, create it on demand.
 - (void)openSqliteDatabase;
-//Loads a given number of log records from new to old
-- (NSMutableArray *)loadLogRecords:(NSInteger)numRecords;
+//Loads all local database log records from new to old
+- (NSMutableArray *)loadLogRecords;
 //Makes the actual POST request to the server to record the logs.
 - (void)postLogRecords:(NSArray *)logRecords withHandler:(SHCallbackHandler)handler;
 //Clear records not send again.
@@ -140,6 +136,26 @@ enum
         return;
     }
     
+    //check app_status's ignore codes
+    NSArray *arrayIgnoreCodes = [[NSUserDefaults standardUserDefaults] objectForKey:@"APPSTATUS_DISABLECODES"];
+    BOOL isIgnored = NO;
+    for (id ignoreCode in arrayIgnoreCodes)
+    {
+        if ([[NSString stringWithFormat:@"%@", ignoreCode] integerValue] == code)
+        {
+            isIgnored = YES;
+            break;
+        }
+    }
+    if (isIgnored)
+    {
+        if (handler)
+        {
+            handler(nil, nil);
+        }
+        return;
+    }
+    
     if (code == LOG_CODE_APP_VISIBLE) //From BG to FG (either launch or resume from BG), is a new session.
     {
         self.fgbgSession++;
@@ -196,13 +212,9 @@ enum
         //session_id must be set for: install_session, install_view, install_enter_exit_view, install_fg_bg; for other log lines it can be null.
         BOOL requireSession = (code == LOG_CODE_APP_LAUNCH) || (code == LOG_CODE_APP_VISIBLE) || (code == LOG_CODE_APP_INVISIBLE) || (code == LOG_CODE_APP_COMPLETE) || (code == LOG_CODE_VIEW_ENTER) || (code == LOG_CODE_VIEW_EXIT) || (code == LOG_CODE_VIEW_COMPLETE);
         NSInteger session = (isAppBG && !requireSession) ? 0/*App in BG and not forcely require session id, use 0, later change to NULL*/ : (self.fgbgSession > 0 ? self.fgbgSession : 1/*Phonegap first launch "app did finish launch" delay 2 second, make fgbgSession=0, but enter view called and log null for session_id.*/);
-#ifdef SH_FEATURE_LATLNG
-        double lat_deprecate = StreetHawk.locationManager.currentGeoLocation.latitude;
-        double lng_deprecate = StreetHawk.locationManager.currentGeoLocation.longitude;
-#else
-        double lat_deprecate = 0;
-        double lng_deprecate = 0;
-#endif
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateGeoLocation" object:nil]; //make value update
+        double lat_deprecate = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LAT] doubleValue];
+        double lng_deprecate = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LNG] doubleValue];
         NSString *values = [NSString stringWithFormat: @"0, %ld, '%@', %ld, '%@', %f, %f, 0, %ld, '%ld'", (long)session, shFormatStreetHawkDate(created), (long)code, [comment stringByReplacingOccurrencesOfString:@"'" withString:@"''"], lat_deprecate, lng_deprecate, (long)assocId, (long)result];
         NSString *sql_str = [NSString stringWithFormat:@"INSERT OR REPLACE INTO '%@' (%@) VALUES (%@)", tableName, columns, values];
         @synchronized(self)
@@ -223,18 +235,48 @@ enum
             int logid = (int)sqlite3_last_insert_rowid(database);
             [[NSUserDefaults standardUserDefaults] setObject:@(logid) forKey:MAX_LOGID];
             [[NSUserDefaults standardUserDefaults] synchronize];
-            SHLog(@"LOG (%d @ %@) <%d> %@.", logid, shFormatStreetHawkDate(created), code, comment);
+            SHLog(@"LOG (%d @ %@) <%d> %@", logid, shFormatStreetHawkDate(created), code, comment);
         }
-        BOOL isForce = (code == LOG_CODE_LOCATION_GEO || code == LOG_CODE_LOCATION_IBEACON || code == LOG_CODE_LOCATION_GEOFENCE || code == LOG_CODE_LOCATION_DENIED)  //immediately send for geo and ibeacon location, but not for code 19.
-        || (code == LOG_CODE_APP_VISIBLE || code == LOG_CODE_APP_INVISIBLE)  //immediately send for session change
-        || (code == LOG_CODE_TAG_INCREMENT || code == LOG_CODE_TAG_DELETE || code == LOG_CODE_TAG_ADD)  //immediately send for add/remove/increment user tag
-        || (code == LOG_CODE_TIMEOFFSET)  //immediately send for time utc offset change
-        || (code == LOG_CODE_HEARTBEAT)  //immediately send for heart beat
-        || (code == LOG_CODE_PUSH_RESULT); //immediately send for pushresult
+        BOOL isForce = NO;
+        NSArray *arrayPriorityCodes = [[NSUserDefaults standardUserDefaults] objectForKey:@"APPSTATUS_PRIORITYCODES"];
+        if (arrayPriorityCodes == nil) //not set, same as before
+        {
+            isForce = (code == LOG_CODE_LOCATION_GEO || code == LOG_CODE_LOCATION_IBEACON || code == LOG_CODE_LOCATION_GEOFENCE || code == LOG_CODE_LOCATION_DENIED)  //immediately send for geo and ibeacon location, but not for code 19.
+            || (code == LOG_CODE_APP_VISIBLE || code == LOG_CODE_APP_INVISIBLE)  //immediately send for session change
+            || (code == LOG_CODE_TAG_INCREMENT || code == LOG_CODE_TAG_DELETE || code == LOG_CODE_TAG_ADD)  //immediately send for add/remove/increment user tag
+            || (code == LOG_CODE_TIMEOFFSET)  //immediately send for time utc offset change
+            || (code == LOG_CODE_HEARTBEAT)  //immediately send for heart beat
+            || (code == LOG_CODE_PUSH_RESULT); //immediately send for pushresult
+        }
+        else
+        {
+            //If have list, must inside the list to be priority
+            for (id priorityCode in arrayPriorityCodes)
+            {
+                if ([[NSString stringWithFormat:@"%@", priorityCode] integerValue] == code)
+                {
+                    isForce = YES;
+                    break;
+                }
+            }
+        }
         if (isForce || ((self.numLogsWritten != 0) && (self.numLogsWritten % LOG_UPLOAD_INTERVAL == 0)))
         {
-            //continue to upload to server, finish will trigger handler
-            [self uploadLogsToServer:LOAD_LOG_NUMBER withHandler:handler];
+            if (handler)
+            {
+                [self uploadLogsToServerWithHandler:handler]; //calling function waiting for handler back, must do this immediately. for example in background send push result.
+            }
+            else
+            {
+                //delay 1 second, if within 1 second there is some other records inserted, they can combine together. This is to combine priority logline together, because after delay first selection post all local logline, and all next will get empty records and directly return. If not combine together, serial priority logline such as sh_module_xxx make logline pending.
+                //Must use `dispatch_after` to another thread, `performSelector` and `NSTimer` doesn't work, due to current queue ends.
+                double delayInSeconds = 1;
+                dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayInSeconds * NSEC_PER_SEC));
+                dispatch_after(popTime, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^(void)
+                   {
+                       [self uploadLogsToServerWithHandler:handler];
+                   });
+            }
             self.numLogsWritten = 0;
         }
         else
@@ -249,14 +291,14 @@ enum
     });
 }
 
-- (void)uploadLogsToServer:(NSInteger)numRecords withHandler:(SHCallbackHandler)handler
+- (void)uploadLogsToServerWithHandler:(SHCallbackHandler)handler
 {
     //The database logs are selected and post to server, after post successfully they are removed from database; However if another selecting happen before previous one finish, duplicated records are selected and sent to server. Server expects unique records. Make a semaphore here to let it happen in sequence.
     NSAssert(![NSThread isMainThread], @"uploadLogsToServer wait in main thread.");
     if (![NSThread isMainThread])
     {
         dispatch_semaphore_wait(self.upload_semaphore, DISPATCH_TIME_FOREVER);
-        NSArray *logRecords = [self loadLogRecords:numRecords];
+        NSArray *logRecords = [self loadLogRecords];
         if (logRecords.count == 0)
         {
             dispatch_semaphore_signal(self.upload_semaphore);
@@ -444,12 +486,10 @@ enum
     create_stmt = NULL;
 }
 
-- (NSMutableArray *)loadLogRecords:(NSInteger)numRecords
+- (NSMutableArray *)loadLogRecords
 {
-    //Select from database to get the upload records
-    numRecords = (numRecords <= 0) ? LOAD_LOG_NUMBER : numRecords;
-    NSMutableArray *logRecords = [NSMutableArray arrayWithCapacity:numRecords];
-    NSString *select_sql_str = [NSString stringWithFormat:@"SELECT * from '%@' WHERE status = 0  ORDER BY logid LIMIT %ld", tableName, (long)numRecords];
+    NSMutableArray *logRecords = [NSMutableArray array];
+    NSString *select_sql_str = [NSString stringWithFormat:@"SELECT * from '%@' WHERE status = 0 ORDER BY logid", tableName];
     @synchronized(self)
     {
         sqlite3_stmt *select_sql = NULL;
@@ -821,9 +861,10 @@ enum
     //These not need to update
     //Remote notification: APNS_DISABLE_TIMESTAMP, APNS_SENT_DISABLE_TIMESTAMP, APNS_DEVICE_TOKEN. Because old data is correct when register new install, and old data is passed in install/register to server. Note: if revoked=timestamp, this will make revoked earlier than created, it's correct as revoked means first time when notification is disabled.
     //Sent history: SentInstall_AppKey, SentInstall_ClientVersion, SentInstall_ShVersion, SentInstall_Mode, SentInstall_Carrier, SentInstall_OSVersion, SentInstall_IBeacon. They are reset after install/register.
+    //Module bridge: SH_GEOLOCATION_LAT, SH_GEOLOCATION_LNG, SH_BEACON_BLUETOOTH, SH_BEACON_iBEACON. They are reset after launch.
     //Crash report: CrashLog_MD5. Make sure not sent duplicate crash report again in new install.
     //Customer setting: ENABLE_LOCATION_SERVICE, ENABLE_PUSH_NOTIFICATION, FRIENDLYNAME_KEY. Cannot reset, must keep same setting as previous install.
-    //Keep old version and adjust by App itself: APPKEY_KEY, NETWORK_RECOVER_TIME, APPSTATUS_STREETHAWKENABLED, APPSTATUS_DEFAULT_HOST, APPSTATUS_ALIVE_HOST, APPSTATUS_UPLOAD_LOCATION, APPSTATUS_SUBMIT_FRIENDLYNAME, APPSTATUS_CHECK_TIME, APPSTATUS_APPSTOREID, REGULAR_HEARTBEAT_LOGTIME, REGULAR_LOCATION_LOGTIME, SMART_PUSH_PAYLOAD. These will be updated automatically by App, keep old version till next App update them.
+    //Keep old version and adjust by App itself: APPKEY_KEY, NETWORK_RECOVER_TIME, APPSTATUS_STREETHAWKENABLED, APPSTATUS_DEFAULT_HOST, APPSTATUS_ALIVE_HOST, APPSTATUS_UPLOAD_LOCATION, APPSTATUS_SUBMIT_FRIENDLYNAME, APPSTATUS_CHECK_TIME, APPSTATUS_APPSTOREID, APPSTATUS_DISABLECODES, APPSTATUS_PRIORITYCODES, REGULAR_HEARTBEAT_LOGTIME, REGULAR_LOCATION_LOGTIME, SMART_PUSH_PAYLOAD. These will be updated automatically by App, keep old version till next App update them.
     //APPSTATUS_GEOFENCE_FETCH_LIST: cannot reset to empty, otherwise when change cannot find previous fence so not stop monitor.
     //User pass in: ADS_IDENTIFIER. Should not delete, move to next install.
     //Rarely use: ALERTSETTINGS_MINUTES, PHONEGAP_8004_PAGE, PHONEGAP_8004_PUSHDATA. These are rarely use, and it will be correct when next customer call, ignore and not reset.
@@ -985,12 +1026,7 @@ enum
                 }
                 else if ([valueObj isKindOfClass:[NSString class]])
                 {
-                    NSString *strValue = (NSString *)valueObj;
-                    if (strValue.length == 0)
-                    {
-                        SHLog(@"Error: Tag user dict has empty string value %@.", valueObj);
-                        return nil;
-                    }
+                    //currently for string nothing to check. Previous there was a check to forbid empty string, however since more cases are included such as `sh_advertising_identifier`, empty string should be possible.
                 }
                 else
                 {

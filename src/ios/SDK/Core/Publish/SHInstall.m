@@ -21,15 +21,6 @@
 #import "SHLogger.h" //for sending logline
 #import "SHRequest.h" //for sending register request
 #import "SHUtils.h" //for shParseDate
-#ifdef SH_FEATURE_NOTIFICATION
-#import "SHApp+Notification.h" //for access_token
-#endif
-#if defined(SH_FEATURE_LATLNG) || defined(SH_FEATURE_GEOFENCE) || defined(SH_FEATURE_IBEACON)
-#import "SHApp+Location.h"
-#endif
-#ifdef SH_FEATURE_IBEACON
-#import "SHLocationManager.h" //for check iBeacon status
-#endif
 //header from Third-party
 #import "SHUIDevice-Hardware.h"
 
@@ -157,14 +148,12 @@ NSString * const SHInstallNotification_kError = @"Error";
             //for SHAppMode_Unknown not submit.
             break;
     }
-#ifdef SH_FEATURE_NOTIFICATION
-    NSString *token = StreetHawk.apnsDeviceToken;
+    NSString *token = [[NSUserDefaults standardUserDefaults] objectForKey:@"APNS_DEVICE_TOKEN"]; //cannot access notification module API `StreetHawk.apnsDeviceToken`, use direct value.
     if (token != nil && token.length > 0)
     {
         [params addObject:@"access_data"];
         [params addObject:token];
     }
-#endif
     [params addObject:@"revoked"];
     NSNumber *disablePushTimeVal = [[NSUserDefaults standardUserDefaults] objectForKey:APNS_DISABLE_TIMESTAMP];
     [[NSUserDefaults standardUserDefaults] setObject:disablePushTimeVal != nil ? disablePushTimeVal : @0.0 forKey:APNS_SENT_DISABLE_TIMESTAMP];
@@ -185,41 +174,39 @@ NSString * const SHInstallNotification_kError = @"Error";
             [params addObject:[identifierForVendor UUIDString]];
         }
     }
-    if (StreetHawk.advertisingIdentifier != nil && StreetHawk.advertisingIdentifier.length > 0)
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateiBeaconStatus" object:nil];
+    int iBeaconSupportStatus = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_BEACON_iBEACON] intValue];
+    switch (iBeaconSupportStatus)
     {
-        [params addObject:@"advertising_identifier"];
-        [params addObject:StreetHawk.advertisingIdentifier];
-    }
-#ifdef SH_FEATURE_IBEACON
-    switch (StreetHawk.locationManager.iBeaconSupportState)
-    {
-        case SHiBeaconState_Unknown:
+        case 0/*SHiBeaconState_Unknown*/:
         {
             //not get accurate iBeacon state, do nothing.
         }
             break;
-        case SHiBeaconState_Support:
+        case 1/*SHiBeaconState_Support*/:
         {
             [params addObject:@"ibeacons"];
             [params addObject:@"true"];
         }
             break;
-        case SHiBeaconState_NotSupport:
+        case 2/*SHiBeaconState_NotSupport*/:
         {
             [params addObject:@"ibeacons"];
             [params addObject:@"false"];
         }
             break;
+        case 3/*SHiBeaconState_Ignore*/:
+        {
+            [params addObject:@"ibeacons"]; //if remove streetHawk/Beacons module, refresh otherwise server still treat as it supports iBeacons.
+            [params addObject:@"false"];
+        }
+            break;
         default:
         {
-            NSAssert(NO, @"Unexpected iBeacon state: %d.", StreetHawk.locationManager.iBeaconSupportState);
+            NSAssert(NO, @"Unexpected iBeacon state: %d.", iBeaconSupportStatus);
         }
             break;
     }
-#else
-    [params addObject:@"ibeacons"]; //if remove streetHawk/Beacons module, refresh otherwise server still treat as it supports iBeacons.
-    [params addObject:@"false"];
-#endif
     switch (shAppMode())
     {
         case SHAppMode_AppStore:
@@ -244,24 +231,6 @@ NSString * const SHInstallNotification_kError = @"Error";
         }
             break;
     }
-    [params addObject:@"feature_locations"];
-#if defined(SH_FEATURE_LATLNG) || defined(SH_FEATURE_GEOFENCE) || defined(SH_FEATURE_IBEACON)
-    [params addObject:StreetHawk.isLocationServiceEnabled ? @"true" : @"false"];
-#else
-    [params addObject:@"false"];
-#endif
-    [params addObject:@"feature_push"];
-#ifdef SH_FEATURE_NOTIFICATION
-    [params addObject:StreetHawk.isNotificationEnabled ? @"true" : @"false"];
-#else
-    [params addObject:@"false"];
-#endif
-    [params addObject:@"feature_ibeacons"];
-#ifdef SH_FEATURE_IBEACON
-    [params addObject:@"true"];
-#else
-    [params addObject:@"false"];
-#endif
     return params;
 }
 
