@@ -446,7 +446,7 @@ enum
 - (void)openSqliteDatabase
 {
     NSString *databasePath = [SHLogger databasePath];
-    int createResult = sqlite3_open_v2([databasePath UTF8String], &database, SQLITE_OPEN_CREATE |SQLITE_OPEN_READWRITE | SQLITE_OPEN_SHAREDCACHE, NULL);
+    int createResult = sqlite3_open_v2([databasePath UTF8String], &database, SQLITE_OPEN_CREATE |SQLITE_OPEN_READWRITE, NULL);
     if (createResult != SQLITE_OK)
     {
         sqlite3_close(database);

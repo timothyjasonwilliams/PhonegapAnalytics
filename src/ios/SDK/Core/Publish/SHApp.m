@@ -227,8 +227,8 @@
         self.isRegisterInstallForAppCalled = NO;
         self.isFinishLaunchOptionCalled = NO;
         //Check local SQLite database and NSUserDefaults at first time before any call. If not match next will be treat as a new install. This is only checked when launch App, not check during App running. Check Apns mode also.
-        [SHLogger checkLogdbForFreshInstall];
-        [SHLogger checkSentApnsModeForFreshInstall];
+        //[SHLogger checkLogdbForFreshInstall];
+        //[SHLogger checkSentApnsModeForFreshInstall];
         //New launch makes lat/lng to be (0, 0), as must have location bridge to update them.
         [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:SH_GEOLOCATION_LAT];
         [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:SH_GEOLOCATION_LNG];
