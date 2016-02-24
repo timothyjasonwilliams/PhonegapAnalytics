@@ -920,7 +920,7 @@ enum
     {
         NSAssert(assocId == 0, @"Try to do none push or feed related log (%@) with assoc id (%ld).", comment, (long)assocId);
     }
-    NSAssert(self.logger != nil, @"Lose logline due to logger is not ready.");
+    //NSAssert(self.logger != nil, @"Lose logline due to logger is not ready.");
     [self.logger logComment:comment atTime:[NSDate date] forCode:code forAssocId:assocId withResult:result withHandler:handler];
 }
 
