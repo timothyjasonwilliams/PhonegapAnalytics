@@ -446,7 +446,7 @@ enum
 - (void)openSqliteDatabase
 {
     NSString *databasePath = [SHLogger databasePath];
-    int createResult = sqlite3_open_v2([databasePath UTF8String], &database, SQLITE_OPEN_CREATE |SQLITE_OPEN_READWRITE, NULL);
+    int createResult = sqlite3_open_v2([databasePath UTF8String], &database, SQLITE_OPEN_CREATE |SQLITE_OPEN_READWRITE | SQLITE_OPEN_SHAREDCACHE, NULL);
     if (createResult != SQLITE_OK)
     {
         sqlite3_close(database);
@@ -867,6 +867,7 @@ enum
     //Keep old version and adjust by App itself: APPKEY_KEY, NETWORK_RECOVER_TIME, APPSTATUS_STREETHAWKENABLED, APPSTATUS_DEFAULT_HOST, APPSTATUS_ALIVE_HOST, APPSTATUS_UPLOAD_LOCATION, APPSTATUS_SUBMIT_FRIENDLYNAME, APPSTATUS_CHECK_TIME, APPSTATUS_APPSTOREID, APPSTATUS_DISABLECODES, APPSTATUS_PRIORITYCODES, REGULAR_HEARTBEAT_LOGTIME, REGULAR_LOCATION_LOGTIME, SMART_PUSH_PAYLOAD. These will be updated automatically by App, keep old version till next App update them.
     //APPSTATUS_GEOFENCE_FETCH_LIST: cannot reset to empty, otherwise when change cannot find previous fence so not stop monitor.
     //User pass in: ADS_IDENTIFIER. Should not delete, move to next install.
+    //SPOTLIGHT_DEEPLINKING_MAPPING: cannot reset to empty, otherwise when spotlight search cannot find mapping.
     //Rarely use: ALERTSETTINGS_MINUTES, PHONEGAP_8004_PAGE, PHONEGAP_8004_PUSHDATA. These are rarely use, and it will be correct when next customer call, ignore and not reset.
     //Delete SQLite database file, it will be re-build for this fresh new install, thus make sure logid start from 1.
     if ([[NSFileManager defaultManager] fileExistsAtPath:[SHLogger databasePath]])
@@ -920,7 +921,7 @@ enum
     {
         NSAssert(assocId == 0, @"Try to do none push or feed related log (%@) with assoc id (%ld).", comment, (long)assocId);
     }
-    //NSAssert(self.logger != nil, @"Lose logline due to logger is not ready.");
+    NSAssert(self.logger != nil, @"Lose logline due to logger is not ready.");
     [self.logger logComment:comment atTime:[NSDate date] forCode:code forAssocId:assocId withResult:result withHandler:handler];
 }
 

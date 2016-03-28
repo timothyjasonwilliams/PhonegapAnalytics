@@ -259,6 +259,13 @@ The application version and build version of current Application, formatted as @
 - (void)shNotifyPageExit:(NSString *)page;
 
 /**
+ Get StreetHawk formatted datetime string for given seconds since 1970.
+ @param seconds Seconds since 1970.
+ @return Streethawk formatted string in style `yyyy-MM-dd HH:mm:ss`, such as 2016-10-21 16:23:18.
+ */
+- (NSString *)getFormattedDateTime:(NSTimeInterval)seconds;
+
+/**
  Callback to let customer App to handle deeplinking url.
  Launch view controller in such scenarios:
  1. Click a link "<app_scheme://host/path?param=value>" in Email or social App, launch this App by `openURL`.
@@ -318,6 +325,41 @@ The application version and build version of current Application, formatted as @
  @return YES if can show preference page since iOS 8; NO if called in previous iOS and nothing happen.
  */
 - (BOOL)launchSystemPreferenceSettings NS_AVAILABLE_IOS(8_0);
+
+/** @name Spotlight and Search */
+
+/**
+ Add or update a spotlight search item into system. It's an easy to use wrapper for `CSSearchableItemAttributeSet`, `CSSearchableItem` and `CSSearchableIndex`, customer can gain same or more powerful result by using iOS API. However this wrapper API is more user friendly and easy to understand, besides it indexs deeplinking which will be used for `StreetHawk.openUrlHandler = ^(NSURL *openUrl) {}`.
+ @param identifier Mandatory, the identifier of this spotlight item. It's unique for each item, if use same identifier it means update to existing item.
+ @param deeplinking Optional, the deeplinking url of this item. It will be used in `StreetHawk.openUrlHandler = ^(NSURL *openUrl) {}` when customer clicks the search result. If `deeplinking` is empty, `StreetHawk.openUrlHandler = ^(NSURL *openUrl) {}` will get `identifier` as `openUrl`.
+ @param searchTitle Optional, the title displaying in search result as title.
+ @param searchDescription Optional, the description displaying in search result as description.
+ @param thumbnail Optional, the thumbnail displaying in search result in left.
+ @param keywords Optional, the keywords used for search, and it doesn't display in search result.
+ */
+- (void)indexSpotlightSearchForIdentifier:(NSString *)identifier forDeeplinking:(NSString *)deeplinking withSearchTitle:(NSString *)searchTitle withSearchDescription:(NSString *)searchDescription withThumbnail:(UIImage *)thumbnail withKeywords:(NSArray *)keywords NS_AVAILABLE_IOS(9_0);
+
+/**
+ Delete spotlight search items according to the array of identifiers.
+ @param arrayIdentifiers An array of identifiers.
+ */
+- (void)deleteSpotlightItemsForIdentifiers:(NSArray *)arrayIdentifiers NS_AVAILABLE_IOS(9_0);
+
+/**
+ Delete all spotlight search items.
+ */
+- (void)deleteAllSpotlightItems NS_AVAILABLE_IOS(9_0);
+
+/**
+ Handle user activity from spotlight search result. User App implement this function by calling it in AppDelegate.m if NOT auto-integrate. If `StreetHawk.autoIntegrateAppDelegate = YES;` make sure NOT call this otherwise cause dead loop. Code snippet:
+ `- (BOOL)application:(UIApplication *)application continueUserActivity:(NSUserActivity *)userActivity restorationHandler:(void (^)(NSArray * _Nullable))restorationHandler`
+ `{`
+    `return [StreetHawk continueUserActivity:userActivity];`
+ `}`
+ 
+ This function checks local mapping of spotlight item's `identifier` and `deeplinking`, and trigger `StreetHawk.openUrlHandler = ^(NSURL *openUrl) {}`. If find mapping use `deeplinking` in callback's `openUrl`, otherwise use `identifier` in callback's `openUrl`.
+ */
+- (BOOL)continueUserActivity:(NSUserActivity *)userActivity NS_AVAILABLE_IOS(9_0);
 
 @end
 
@@ -396,6 +438,14 @@ The application version and build version of current Application, formatted as @
  @return If tag to server return YES; if fail to send to server return NO.
  */
 - (BOOL)incrementTag:(NSString *)key;
+
+/**
+ Send log with code=8997, comment={"key": "<key>", "numeric": <value>}.
+ @param value The int value of how many the key should be increment.
+ @param key Key for existing tag. Cannot be empty.
+ @return If tag to server return YES; if fail to send to server return NO.
+ */
+- (BOOL)incrementTag:(int)value forKey:(NSString *)key;
 
 @end
 

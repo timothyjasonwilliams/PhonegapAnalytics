@@ -423,7 +423,7 @@ UIWindow *shGetPresentWindow()
 
 #define StreetHawk_BUNDLE ([[NSBundle mainBundle] URLForResource:@"streethawk" withExtension:@"bundle"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"streethawk" withExtension:@"bundle"]] : nil)
 #define StreetHawkCoreRES_BUNDLE ([[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle"]] : nil)
-#define StreetHawkCoreRES_Titanium_BUNDLE ([[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"modules/com.streethawk"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"modules/com.streethawk"]] : nil)
+#define StreetHawkCoreRES_Titanium_BUNDLE ([[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"modules/com.streethawk.shanalytics"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"modules/com.streethawk.shanalytics"]] : nil)
 #define StreetHawkCoreRES_EmbeddedFull_BUNDLE ([[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"Frameworks/StreetHawkCore.framework"] != nil ? [NSBundle bundleWithURL:[[NSBundle mainBundle] URLForResource:@"StreetHawkCoreRes" withExtension:@"bundle" subdirectory:@"Frameworks/StreetHawkCore.framework"]] : nil)
 
 NSBundle *shFindBundleForResource(NSString *resourceName, NSString *type, BOOL mandatory)
@@ -575,7 +575,7 @@ NSString *shGetCarrierName()
     CTTelephonyNetworkInfo *netinfo = [[CTTelephonyNetworkInfo alloc] init];
     CTCarrier *carrier = [netinfo subscriberCellularProvider];
     NSString *carrierName = [carrier carrierName];
-    return (carrierName != nil && carrierName.length > 0) ? carrierName : @"Other";
+    return !shStrIsEmpty(carrierName) ? carrierName : @"Other";
 }
 
 SHAppMode shAppMode()

@@ -25,6 +25,9 @@
 #import "SHDeepLinking.h"
 #import "SHFriendlyNameObject.h"
 #import "SHUtils.h"
+//header from System
+#import <CoreSpotlight/CoreSpotlight.h> //for spotlight search
+#import <MobileCoreServices/MobileCoreServices.h> //for kUTTypeImage
 
 #define SETTING_UTC_OFFSET                  @"SETTING_UTC_OFFSET"  //key for local saved utc offset value
 
@@ -36,6 +39,8 @@
 #define EXIT_PAGE_HISTORY                   @"EXIT_PAGE_HISTORY"  //key for record send exit log history. It's set when send exit log and cleared when send enter log. This is to avoid send duplicated exit log.
 
 #define ADS_IDENTIFIER                      @"ADS_IDENTIFIER" //user pass in advertising identifier
+
+#define SPOTLIGHT_DEEPLINKING_MAPPING      @"SPOTLIGHT_DEEPLINKING_MAPPING" //key for spotlight identifier to deeplinking mappig
 
 @interface SHViewActivity : NSObject
 
@@ -146,7 +151,7 @@
     dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayInSeconds * NSEC_PER_SEC));
     dispatch_after(popTime, dispatch_get_main_queue(), ^(void)
     {
-       [[NSNotificationCenter defaultCenter] postNotificationName:@"StreetHawkDelayLaunchOptionsNotification" object:notification.object userInfo:notification.userInfo];
+       [[NSNotificationCenter defaultCenter] postNotificationName:@"StreetHawkDelayLaunchOptionsNotification" object:notification.object userInfo:[notification.userInfo copy]/*Titanium modify launchOptions dictionary, and StreetHawk reads it in delay launch. To avoid crash "Collection <__NSDictionaryM: ..> was mutated while being enumerated" make this copy*/];
     });
 }
 
@@ -227,8 +232,8 @@
         self.isRegisterInstallForAppCalled = NO;
         self.isFinishLaunchOptionCalled = NO;
         //Check local SQLite database and NSUserDefaults at first time before any call. If not match next will be treat as a new install. This is only checked when launch App, not check during App running. Check Apns mode also.
-        //[SHLogger checkLogdbForFreshInstall];
-        //[SHLogger checkSentApnsModeForFreshInstall];
+        [SHLogger checkLogdbForFreshInstall];
+        [SHLogger checkSentApnsModeForFreshInstall];
         //New launch makes lat/lng to be (0, 0), as must have location bridge to update them.
         [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:SH_GEOLOCATION_LAT];
         [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:SH_GEOLOCATION_LNG];
@@ -362,7 +367,7 @@
 {
     //Framework version is upgraded by StreetHawkCore-Info.plist and StreetHawkCoreRes-Info.plist, but the version number is not accessible by code. StreetHawkCore-Info.plist is built as binrary in main App, StreetHawkCoreRes-Info.plist may be contained in main App but not guranteed. To make sure this version work, add a method with hard-coded version number.
     //Format: X.Y.Z, make sure X and Y and Z are from >= 0  and < 1000.
-    return @"1.7.5";
+    return @"1.7.7";
 }
 
 - (SHInstall *)currentInstall
@@ -489,6 +494,11 @@
 
 - (void)shNotifyPageExit:(NSString *)page
 {
+    if (self.currentView == nil)
+    {
+        //In growth open deeplinking case https://bitbucket.org/shawk/testing/issues/214/organic-share-and-open-page-meet-page, viewWillDisappear is called without viewDidAppear or viewWillAppear, in these cases the disappear view is not visible at all and should not do exit or complete logline. Because `currentView` is created in enter, use this as check.
+        return;
+    }
     //These checks applies to normal customer App calls. However even the check fail it only throw assert in Debug (not happen in official release), and not stop send 8109 log.
     NSAssert(page != nil && page.length > 0, @"Try to exit a page without page name.");
     if (page != nil && page.length > 0)
@@ -511,6 +521,11 @@
     }
     //Send log even if check fail. If page is nil will use history, although not recommend normal App to do this.
     [self shNotifyPageExit:page clearEnterHistory:YES/*for normal App calls, after exit clear history*/ logCompleteView:YES/*normal App call, this is manual exit a view so complete.*/];
+}
+
+- (NSString *)getFormattedDateTime:(NSTimeInterval)seconds
+{
+    return shFormatStreetHawkDate([NSDate dateWithTimeIntervalSince1970:seconds]);
 }
 
 - (void)shRegularTask:(void (^)(UIBackgroundFetchResult))completionHandler needComplete:(BOOL)needComplete
@@ -620,6 +635,129 @@
     }
 }
 
+#pragma mark - Spotlight and Search
+
+- (void)indexSpotlightSearchForIdentifier:(NSString *)identifier forDeeplinking:(NSString *)deeplinking withSearchTitle:(NSString *)searchTitle withSearchDescription:(NSString *)searchDescription withThumbnail:(UIImage *)thumbnail withKeywords:(NSArray *)keywords
+{
+    if (shStrIsEmpty(identifier))
+    {
+        SHLog(@"Spotlight's identifier cannot be empty.");
+        return;
+    }
+    //index to system
+    CSSearchableItemAttributeSet *attributeSet = [[CSSearchableItemAttributeSet alloc] initWithItemContentType:(NSString*) kUTTypeImage];
+    attributeSet.title = searchTitle;
+    attributeSet.contentDescription = searchDescription;
+    if (thumbnail != nil)
+    {
+        attributeSet.thumbnailData = UIImagePNGRepresentation(thumbnail);
+    }
+    attributeSet.keywords = keywords;
+    CSSearchableItem *searchableItem = [[CSSearchableItem alloc] initWithUniqueIdentifier:identifier domainIdentifier:nil attributeSet:attributeSet];
+    [[CSSearchableIndex defaultSearchableIndex] indexSearchableItems:@[searchableItem] completionHandler:^(NSError * _Nullable error)
+    {
+        if (error)
+        {
+            SHLog(@"Fail to index splotlight item due to error: %@", error.localizedDescription);
+        }
+        else
+        {
+            //add index and deeplinking to StreetHawk mapping
+            if (!shStrIsEmpty(deeplinking))
+            {
+                BOOL needSave = YES;
+                NSDictionary *dictMapping = [[NSUserDefaults standardUserDefaults] objectForKey:SPOTLIGHT_DEEPLINKING_MAPPING];
+                if (dictMapping != nil && [dictMapping isKindOfClass:[NSDictionary class]])
+                {
+                    NSString *existingDeeplinking = dictMapping[identifier];
+                    if ([deeplinking compare:existingDeeplinking] == NSOrderedSame)
+                    {
+                        needSave = NO;
+                    }
+                }
+                if (needSave)
+                {
+                    NSMutableDictionary *dictSave = dictMapping ? [NSMutableDictionary dictionaryWithDictionary:dictMapping] : [NSMutableDictionary dictionary];
+                    dictSave[identifier] = deeplinking;
+                    [[NSUserDefaults standardUserDefaults] setObject:dictSave forKey:SPOTLIGHT_DEEPLINKING_MAPPING];
+                    [[NSUserDefaults standardUserDefaults] synchronize];
+                }
+            }
+        }
+    }];
+}
+
+- (void)deleteSpotlightItemsForIdentifiers:(NSArray *)arrayIdentifiers
+{
+    [[CSSearchableIndex defaultSearchableIndex] deleteSearchableItemsWithIdentifiers:arrayIdentifiers completionHandler:^(NSError * _Nullable error)
+    {
+        if (error)
+        {
+            SHLog(@"Fail to delete splotlight items due to error: %@", error.localizedDescription);
+        }
+        else
+        {
+            NSDictionary *dictMapping = [[NSUserDefaults standardUserDefaults] objectForKey:SPOTLIGHT_DEEPLINKING_MAPPING];
+            if (dictMapping != nil)
+            {
+                NSMutableDictionary *dictSave = [NSMutableDictionary dictionaryWithDictionary:dictMapping];
+                for (NSString *identifier in arrayIdentifiers)
+                {
+                    [dictSave removeObjectForKey:identifier];
+                }
+                [[NSUserDefaults standardUserDefaults] setObject:dictSave forKey:SPOTLIGHT_DEEPLINKING_MAPPING];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+            }
+        }
+    }];
+}
+
+- (void)deleteAllSpotlightItems
+{
+    [[CSSearchableIndex defaultSearchableIndex] deleteAllSearchableItemsWithCompletionHandler:^(NSError * _Nullable error)
+    {
+        if (error)
+        {
+            SHLog(@"Fail to delete all splotlight items due to error: %@", error.localizedDescription);
+        }
+        else
+        {
+            [[NSUserDefaults standardUserDefaults] setObject:@{} forKey:SPOTLIGHT_DEEPLINKING_MAPPING];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }
+    }];
+}
+
+- (BOOL)continueUserActivity:(NSUserActivity *)userActivity
+{
+    if (StreetHawk.openUrlHandler != nil)
+    {
+        if ([userActivity.activityType compare:NSUserActivityTypeBrowsingWeb] == NSOrderedSame)
+        {
+            NSURL *webURL = userActivity.webpageURL;
+            StreetHawk.openUrlHandler(webURL);
+            return YES; //for universal linking case
+        }
+        else
+        {
+            NSString *spotlightIdentifier = userActivity.userInfo[@"kCSSearchableItemActivityIdentifier"];
+            NSDictionary *dictMapping = [[NSUserDefaults standardUserDefaults] objectForKey:SPOTLIGHT_DEEPLINKING_MAPPING];
+            NSString *deeplinking = nil;
+            if (dictMapping != nil && [dictMapping isKindOfClass:[NSDictionary class]])
+            {
+                deeplinking = dictMapping[spotlightIdentifier];
+            }
+            NSString *openUrl = deeplinking ? deeplinking : spotlightIdentifier;
+            if (!shStrIsEmpty(openUrl))
+            {
+                StreetHawk.openUrlHandler([NSURL URLWithString:openUrl]);
+                return YES; //for spotlight search case
+            }
+        }
+    }
+    return NO;
+}
+
 #pragma mark - application system notification handler
 
 //Good Apple doc for App states: https://developer.apple.com/library/ios/DOCUMENTATION/iPhone/Conceptual/iPhoneOSProgrammingGuide/ManagingYourApplicationsFlow/ManagingYourApplicationsFlow.html#//apple_ref/doc/uid/TP40007072-CH4.
@@ -638,17 +776,28 @@
     {
         return;
     }
-    NSDictionary *launchOptions = [notification userInfo];
-    SHLog(@"Application did finish launching with launchOptions: %@", launchOptions);
-
+    
     BOOL isFromDelayLaunch = [notification.name isEqualToString:@"StreetHawkDelayLaunchOptionsNotification"]; //in case from delay launch options, the remote delegate happens when app launch, and at that time StreetHawk delegate not ready, it's pass and cannot handle. Handle it again here.
-    //Phonegap open url system delegate happen before StreetHawk library get ready, so `sh.shDeeplinking(function(result){alert("open url: " + result)},function(){});` not trigger when App not launch. Check delay launch options, if from open url, give it second chance to trigger again.
+    NSDictionary *launchOptions = [notification userInfo];
+    SHLog(@"Application did finish launching (%@) with launchOptions: %@", isFromDelayLaunch ? @"Delay" : @"Normal", launchOptions);
+    
     if (isFromDelayLaunch)
     {
+        //Phonegap open url system delegate happen before StreetHawk library get ready, so `sh.shDeeplinking(function(result){alert("open url: " + result)},function(){});` not trigger when App not launch. Check delay launch options, if from open url, give it second chance to trigger again.
         NSURL *openUrl = launchOptions[UIApplicationLaunchOptionsURLKey];
         if (openUrl != nil)
         {
             [StreetHawk openURL:openUrl];
+        }
+        //Phonegap handle remote notification happen before StreetHawk library get ready, so remote notification cannot be handled. Check delay launch options, if from remote notification, give it second chance to trigger again.
+        NSDictionary *notificationInfo = launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey];
+        if (notificationInfo != nil)
+        {
+            NSMutableDictionary *dictUserInfo = [NSMutableDictionary dictionary];
+            dictUserInfo[@"payload"] = notificationInfo;
+            dictUserInfo[@"fgbg"] = @(SHAppFGBG_BG); //this must be wake from not launch
+            dictUserInfo[@"needComplete"] = @(NO);
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_ReceiveRemoteNotification" object:nil userInfo:dictUserInfo];
         }
     }
     
@@ -699,6 +848,12 @@
             }
         };
         [requestCheckVersion startAsynchronously];
+    }
+    
+    //If add push module later for Phonegap, if already have installs it won't register and show permission dialog until next BG to FG. `applicationDidBecomeActiveNotificationHandler` does the check however first launch it's not ready due to Phonegap web load. `applicationDidFinishLaunchingNotificationHandler` has delay load and good chance to do register at first launch.
+    if ((StreetHawk.developmentPlatform == SHDevelopmentPlatform_Phonegap || StreetHawk.developmentPlatform == SHDevelopmentPlatform_Titanium) && StreetHawk.currentInstall != nil)
+    {
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_Register_Notification" object:nil];
     }
 }
 
@@ -1009,64 +1164,57 @@
 //since iOS 9 uses this delegate callback, and `- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation` is not called when this new delegate present.
 - (BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary<NSString *,id> *)options
 {
+    BOOL customerHandled = NO;
     if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:openURL:options:)])
     {
-        if ([self.appDelegateInterceptor.secondResponder application:app openURL:url options:options])
-        {
-            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap)
-            {
-                return YES;
-            }
-        }
+        customerHandled = [self.appDelegateInterceptor.secondResponder application:app openURL:url options:options];
     }
-    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:openURL:sourceApplication:annotation:)]) //try old style handle
+    if (!customerHandled)
     {
-        if ([self.appDelegateInterceptor.secondResponder application:app openURL:url sourceApplication:options[UIApplicationOpenURLOptionsSourceApplicationKey] annotation:options[UIApplicationOpenURLOptionsAnnotationKey]])
+        if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:openURL:sourceApplication:annotation:)]) //try old style handle
         {
-            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap)
-            {
-                return YES;
-            }
+            customerHandled = [self.appDelegateInterceptor.secondResponder application:app openURL:url sourceApplication:options[UIApplicationOpenURLOptionsSourceApplicationKey] annotation:options[UIApplicationOpenURLOptionsAnnotationKey]];
         }
     }
-    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:handleOpenURL:)]) //try old style handle
+    if (!customerHandled)
     {
-        if ([self.appDelegateInterceptor.secondResponder application:app handleOpenURL:url])
+        if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:handleOpenURL:)]) //try old style handle
         {
-            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap)
-            {
-                return YES;
-            }
+            customerHandled = [self.appDelegateInterceptor.secondResponder application:app handleOpenURL:url];
         }
     }
-    return [StreetHawk openURL:url];
+    BOOL sdkHandled = [StreetHawk openURL:url]; //always do StreetHawk handle
+    return customerHandled || sdkHandled;
 }
 
 //before iOS 9 still use this delegate.
 - (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation
 {
+    BOOL customerHandled = NO;
     if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:openURL:sourceApplication:annotation:)])
     {
-        if ([self.appDelegateInterceptor.secondResponder application:application openURL:url sourceApplication:sourceApplication annotation:annotation])
-        {
-            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap) //Phonegap has openURL function implemented, but iOS plugin still implement shDeepLinking to keep consistence with Android. https://bitbucket.org/shawk/streethawk/issue/587/handle-open-url-in-phonegap.
-            {
-                return YES;
-            }
-        }
+        customerHandled = [self.appDelegateInterceptor.secondResponder application:application openURL:url sourceApplication:sourceApplication annotation:annotation];
     }
-    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:handleOpenURL:)]) //try old style handle
+    if (!customerHandled)
     {
-        if ([self.appDelegateInterceptor.secondResponder application:application handleOpenURL:url])
+        if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:handleOpenURL:)]) //try old style handle
         {
-            if (StreetHawk.developmentPlatform != SHDevelopmentPlatform_Phonegap)
-            {
-                return YES;
-            }
+            customerHandled = [self.appDelegateInterceptor.secondResponder application:application handleOpenURL:url];
         }
     }
-    //If custom App cannot handle it, try StreetHawk's.
-    return [StreetHawk openURL:url];
+    BOOL sdkHandled = [StreetHawk openURL:url];
+    return customerHandled || sdkHandled;
+}
+
+- (BOOL)application:(UIApplication *)application continueUserActivity:(NSUserActivity *)userActivity restorationHandler:(void (^)(NSArray * _Nullable))restorationHandler
+{
+    BOOL customerHandled = NO;
+    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:continueUserActivity:restorationHandler:)])
+    {
+        customerHandled = [self.appDelegateInterceptor.secondResponder application:application continueUserActivity:userActivity restorationHandler:restorationHandler];
+    }
+    BOOL sdkHandled =  [StreetHawk continueUserActivity:userActivity];
+    return customerHandled || sdkHandled;
 }
 
 #pragma mark - private functions
@@ -1358,7 +1506,7 @@
 
 - (BOOL)tagString:(NSObject *)value forKey:(NSString *)key
 {
-    if (value != nil && key != nil && key.length > 0)
+    if (value != nil && !shStrIsEmpty(key))
     {
         if ([self checkTagValue:value forKey:key])
         {
@@ -1373,7 +1521,7 @@
 
 - (BOOL)tagNumeric:(double)value forKey:(NSString *)key
 {
-    if (key != nil && key.length > 0)
+    if (!shStrIsEmpty(key))
     {
         if ([self checkTagValue:@(value) forKey:key])
         {
@@ -1388,7 +1536,7 @@
 
 - (BOOL)tagDatetime:(NSDate *)value forKey:(NSString *)key
 {
-    if (value != nil && key != nil && key.length > 0)
+    if (value != nil && !shStrIsEmpty(key))
     {
         if ([self checkTagValue:value forKey:key])
         {
@@ -1403,7 +1551,7 @@
 
 - (BOOL)removeTag:(NSString *)key
 {
-    if (key != nil && key.length > 0)
+    if (!shStrIsEmpty(key))
     {
         key = [self checkTagKey:key];
         NSDictionary *dict = @{@"key": key};
@@ -1415,10 +1563,15 @@
 
 - (BOOL)incrementTag:(NSString *)key
 {
-    if (key != nil && key.length > 0)
+    return [self incrementTag:1 forKey:key];
+}
+
+- (BOOL)incrementTag:(int)value forKey:(NSString *)key
+{
+    if (!shStrIsEmpty(key))
     {
         key = [self checkTagKey:key];
-        NSDictionary *dict = @{@"key": key, @"numeric": @1};
+        NSDictionary *dict = @{@"key": key, @"numeric": @(value)};
         [self sendLogForTag:dict withCode:LOG_CODE_TAG_INCREMENT];
         return YES;
     }
