@@ -26,6 +26,7 @@
 #define APPSTATUS_ALIVE_HOST                @"APPSTATUS_ALIVE_HOST" //currently used alive host url
 #define APPSTATUS_UPLOAD_LOCATION           @"APPSTATUS_UPLOAD_LOCATION" //whether send install/log for location update
 #define APPSTATUS_SUBMIT_FRIENDLYNAME       @"APPSTATUS_SUBMIT_FRIENDLYNAME"  //whether server allow submit friendly name
+#define APPSTATUS_SUBMIT_INTERACTIVEBUTTONS @"APPSTATUS_SUBMIT_INTERACTIVEBUTTONS" //whether server allow submit interactive pair buttons
 #define APPSTATUS_REREGISTER                @"APPSTATUS_REREGISTER" //a flag set to notice next launch must re-register install
 #define APPSTATUS_APPSTOREID                @"APPSTATUS_APPSTOREID" //server push itunes id to client side
 #define APPSTATUS_DISABLECODES              @"APPSTATUS_DISABLECODES" //disable logline codes
@@ -44,6 +45,7 @@ NSString * const SHAppStatusChangeNotification = @"SHAppStatusChangeNotification
 @property (nonatomic) dispatch_semaphore_t semaphore_aliveHost;
 @property (nonatomic) dispatch_semaphore_t semaphore_uploadLocationChange;
 @property (nonatomic) dispatch_semaphore_t semaphore_allowSubmitFriendlyNames;
+@property (nonatomic) dispatch_semaphore_t semaphore_allowSubmitInteractiveButtons;
 @property (nonatomic) dispatch_semaphore_t semaphore_appstoreId;
 @property (nonatomic) dispatch_semaphore_t semaphore_disableCodes;
 @property (nonatomic) dispatch_semaphore_t semaphore_priorityCodes;
@@ -88,6 +90,7 @@ NSString * const SHAppStatusChangeNotification = @"SHAppStatusChangeNotification
         self.semaphore_aliveHost = dispatch_semaphore_create(1);
         self.semaphore_uploadLocationChange = dispatch_semaphore_create(1);
         self.semaphore_allowSubmitFriendlyNames = dispatch_semaphore_create(1);
+        self.semaphore_allowSubmitInteractiveButtons = dispatch_semaphore_create(1);
         self.semaphore_appstoreId = dispatch_semaphore_create(1);
         self.semaphore_disableCodes = dispatch_semaphore_create(1);
         self.semaphore_priorityCodes = dispatch_semaphore_create(1);
@@ -235,13 +238,30 @@ NSString * const SHAppStatusChangeNotification = @"SHAppStatusChangeNotification
     if (![NSThread isMainThread])
     {
         dispatch_semaphore_wait(self.semaphore_allowSubmitFriendlyNames, DISPATCH_TIME_FOREVER);
-        if (self.allowSubmitFriendlyNames != allowSubmitFriendlyNames)
-        {
-            [[NSUserDefaults standardUserDefaults] setBool:allowSubmitFriendlyNames forKey:APPSTATUS_SUBMIT_FRIENDLYNAME];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [[NSNotificationCenter defaultCenter] postNotificationName:SHAppStatusChangeNotification object:nil];        
-        }
+        //not compare `if (self.allowSubmitFriendlyNames != allowSubmitFriendlyNames)` otherwise once submission failure cause following not submit.
+        [[NSUserDefaults standardUserDefaults] setBool:allowSubmitFriendlyNames forKey:APPSTATUS_SUBMIT_FRIENDLYNAME];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [[NSNotificationCenter defaultCenter] postNotificationName:SHAppStatusChangeNotification object:nil];
         dispatch_semaphore_signal(self.semaphore_allowSubmitFriendlyNames);
+    }
+}
+
+- (BOOL)allowSubmitInteractiveButton
+{
+    return [[NSUserDefaults standardUserDefaults] boolForKey:APPSTATUS_SUBMIT_INTERACTIVEBUTTONS];
+}
+
+- (void)setAllowSubmitInteractiveButton:(BOOL)allowSubmitInteractiveButton
+{
+    NSAssert(![NSThread isMainThread], @"setAllowSubmitInteractiveButton wait in main thread.");
+    if (![NSThread isMainThread])
+    {
+        dispatch_semaphore_wait(self.semaphore_allowSubmitInteractiveButtons, DISPATCH_TIME_FOREVER);
+        //not compare `if (self.allowSubmitInteractiveButton != allowSubmitInteractiveButton)` otherwise once submission failure cause following not submit.
+        [[NSUserDefaults standardUserDefaults] setBool:allowSubmitInteractiveButton forKey:APPSTATUS_SUBMIT_INTERACTIVEBUTTONS];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [[NSNotificationCenter defaultCenter] postNotificationName:SHAppStatusChangeNotification object:nil];
+        dispatch_semaphore_signal(self.semaphore_allowSubmitInteractiveButtons);
     }
 }
 
@@ -397,17 +417,13 @@ NSString * const SHAppStatusChangeNotification = @"SHAppStatusChangeNotification
 
 #pragma mark - public functions
 
-- (void)sendAppStatusCheckRequest:(BOOL)force completeHandler:(SHRequestHandler)handler
+- (void)sendAppStatusCheckRequest:(BOOL)force
 {
     if (!force)
     {
         NSObject *lastCheckTimeVal = [[NSUserDefaults standardUserDefaults] objectForKey:APPSTATUS_CHECK_TIME];
         if (lastCheckTimeVal != nil/*fresh launch must check first*/ && self.streethawkEnabled/*No need to send request, as when StreetHawk is enabled, normal request are sent frequently*/)
         {
-            if (handler)
-            {
-                handler(nil);
-            }
             return;
         }
         double lastCheckTime = 0;
@@ -417,16 +433,10 @@ NSString * const SHAppStatusChangeNotification = @"SHAppStatusChangeNotification
         }
         if (lastCheckTime != 0 && [NSDate date].timeIntervalSinceReferenceDate - lastCheckTime < 60*60*24) //not check again once in a day, ticket https://bitbucket.org/shawk/streethawk/issue/379/app-status-reworked
         {
-            if (handler)
-            {
-                handler(nil);
-            }
             return;
         }
     }
-    SHRequest *request = [SHRequest requestWithPath:@"apps/status/" withParams:@[@"app_key", NONULL(StreetHawk.appKey)]];
-    request.requestHandler = handler;
-    [request startAsynchronously];
+    [[SHHTTPSessionManager sharedInstance] GET:@"apps/status/" hostVersion:SHHostVersion_V1 parameters:@{@"app_key": NONULL(StreetHawk.appKey)} success:nil failure:nil];
 }
 
 - (void)recordCheckTime

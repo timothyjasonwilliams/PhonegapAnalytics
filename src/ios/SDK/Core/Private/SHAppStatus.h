@@ -16,7 +16,7 @@
  */
 
 #import <Foundation/Foundation.h>
-#import "SHRequest.h" //for enum SHHostVersion
+#import "SHHTTPSessionManager.h" //for enum SHHostVersion
 
 /**
  Notification sent when server returns `app_status` different from local. Its user info is empty, read singletone `[SHAppStatus sharedInstance]` to get current situation.
@@ -68,6 +68,11 @@ extern NSString * const SHAppStatusChangeNotification;
 @property (nonatomic) BOOL allowSubmitFriendlyNames;
 
 /**
+ Match to `app_status` dictionary's `submit_interactive_button`. If set to YES local can submit interactive pair button. Server set it to YES when a new client version uploaded, once accept interactive pair button for this client version, server return NO. Note: for debugging convenience, interactive pair button always submit when debugMode=YES regardless of this flag.
+ */
+@property (nonatomic) BOOL allowSubmitInteractiveButton;
+
+/**
  Match to `app_status` dictionary's `ibeacon`. It's a time stamp of server provided iBeacon list. If the time stamp is newer than client fetch time, client should fetch iBeacon list again and monitor new list; if the time stamp is NULL, client should clear cached iBeacon and stop monitor.
  */
 @property (nonatomic, strong) NSString *iBeaconTimestamp;
@@ -107,9 +112,8 @@ extern NSString * const SHAppStatusChangeNotification;
 /**
  App status could change for some reason, so the App needs to check current one in some situation, (start to run, from background to foreground, handle push message 8003), these are handled by StreetHawk automatically. This call is a utility function to do the check. Although all request may contain "app_status", this send "/apps/status" request.
  @param force If NO do not check for a. `streethawkEnabled`=YES as request send often; b. previous check in a day. If YES do check whatever.
- @param handler Handler is triggered when check complete. If not send request handler(nil), otherwise handler(request).
  */
-- (void)sendAppStatusCheckRequest:(BOOL)force completeHandler:(SHRequestHandler)handler;
+- (void)sendAppStatusCheckRequest:(BOOL)force;
 
 /**
  Save this check time to avoid frequent check. No matter any property changed or not, record the time.

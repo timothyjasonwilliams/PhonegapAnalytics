@@ -290,7 +290,7 @@
     //1. It does NOT stop anything, streethawkEnabled is YES by default, and all other functions work, not wait for completeHandler.
     //2. It sends /apps/status request before all other request, but cannot put init as app_key is not known yet.
     //3. Not force so that second and later launch not send request.
-    [[SHAppStatus sharedInstance] sendAppStatusCheckRequest:NO completeHandler:nil];
+    [[SHAppStatus sharedInstance] sendAppStatusCheckRequest:NO];
     //do analytics for application first run/started
     if ([[NSUserDefaults standardUserDefaults] integerForKey:@"NumTimesAppUsed"] == 0)
     {
@@ -300,6 +300,12 @@
     else
     {
         [StreetHawk sendLogForCode:LOG_CODE_APP_LAUNCH withComment:@"App started and engine initialized"];
+    }
+    //send sh_language automatically only once for an install
+    if ([[NSUserDefaults standardUserDefaults] integerForKey:@"TAG_SHLANGUAGE"] == 0)
+    {
+        [StreetHawk tagUserLanguage:nil];
+        [[NSUserDefaults standardUserDefaults] setInteger:1 forKey:@"TAG_SHLANGUAGE"];
     }
     [[NSUserDefaults standardUserDefaults] synchronize];
     //check time zone and register for later change
@@ -367,7 +373,7 @@
 {
     //Framework version is upgraded by StreetHawkCore-Info.plist and StreetHawkCoreRes-Info.plist, but the version number is not accessible by code. StreetHawkCore-Info.plist is built as binrary in main App, StreetHawkCoreRes-Info.plist may be contained in main App but not guranteed. To make sure this version work, add a method with hard-coded version number.
     //Format: X.Y.Z, make sure X and Y and Z are from >= 0  and < 1000.
-    return @"1.7.7";
+    return @"1.7.8";
 }
 
 - (SHInstall *)currentInstall
@@ -831,23 +837,18 @@
     
     if (StreetHawk.developmentPlatform == SHDevelopmentPlatform_Native && StreetHawk.isDebugMode && shAppMode() != SHAppMode_AppStore && shAppMode() != SHAppMode_Enterprise && ([UIApplication sharedApplication].applicationState != UIApplicationStateBackground))  //In debug mode, not live for AppStore, not in background wake up (either by location with option has location key, or by background fetch with optional is nil), check current version and StreetHawk's latest version. Print log if current not the latest version.
     {
-        SHRequest *requestCheckVersion = [SHRequest requestWithPath:@"core/library/" withParams:@[@"operating_system", @"ios", @"development_platform", shDevelopmentPlatformString()]];
-        requestCheckVersion.requestHandler = ^(SHRequest *request)
+        [[SHHTTPSessionManager sharedInstance] GET:@"core/library/" hostVersion:SHHostVersion_V1 parameters:@{@"operating_system": @"ios", @"development_platform": shDevelopmentPlatformString()} success:^(NSURLSessionDataTask * _Nullable task, id  _Nullable responseObject)
         {
-            if (request.error == nil && request.resultCode == 0)
+            NSString *serverVersion = (NSString *)responseObject;  //it's supposed to be @"1.3.2".
+            NSAssert([serverVersion isKindOfClass:[NSString class]] && !shStrIsEmpty(serverVersion), @"Fail to get server's sh_version. %@.", serverVersion);
+            if ([serverVersion isKindOfClass:[NSString class]] && !shStrIsEmpty(serverVersion))
             {
-                NSString *serverVersion = (NSString *)request.resultValue;  //it's supposed to be @"1/1.3.2" or @"1.3.2".
-                NSAssert(serverVersion != nil && [serverVersion isKindOfClass:[NSString class]] && serverVersion.length >= StreetHawk.version.length, @"Fail to get server's sh_version. %@.", serverVersion);
-                if (serverVersion != nil && [serverVersion isKindOfClass:[NSString class]] && serverVersion.length >= StreetHawk.version.length)
+                if ([serverVersion compare:StreetHawk.version options:NSCaseInsensitiveSearch] != NSOrderedSame)
                 {
-                    if ([serverVersion compare:StreetHawk.version/*like 1.3.2*/ options:NSCaseInsensitiveSearch range:NSMakeRange(serverVersion.length - StreetHawk.version.length, StreetHawk.version.length)] != NSOrderedSame)
-                    {
-                        SHLog(@"INFO: A newer version of the StreetHawk Library is available: %@.", serverVersion);
-                    }
+                    SHLog(@"INFO: A newer version of the StreetHawk Library is available: %@.", serverVersion);
                 }
             }
-        };
-        [requestCheckVersion startAsynchronously];
+        } failure:nil];
     }
     
     //If add push module later for Phonegap, if already have installs it won't register and show permission dialog until next BG to FG. `applicationDidBecomeActiveNotificationHandler` does the check however first launch it's not ready due to Phonegap web load. `applicationDidFinishLaunchingNotificationHandler` has delay load and good chance to do register at first launch.
@@ -956,7 +957,7 @@
 - (void)applicationDidBecomeActiveNotificationHandler:(NSNotification *)notification
 {
     //check app status from background to foreground, most actually return because of "one day not call" limitation.
-    [[SHAppStatus sharedInstance] sendAppStatusCheckRequest:NO completeHandler:nil];  //a chance to check if sdk was disabled, may be able to wake up again. Choose this instead of applicationWillEnterForeground because this is also called when App not launched, manually click to open.
+    [[SHAppStatus sharedInstance] sendAppStatusCheckRequest:NO];  //a chance to check if sdk was disabled, may be able to wake up again. Choose this instead of applicationWillEnterForeground because this is also called when App not launched, manually click to open.
     [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_SetBadge_Notification" object:nil userInfo:@{@"badge": @(0)}]; //clear badge when App open, for some user they don't like this number and would like to launch App to dismiss it.
     if (!streetHawkIsEnabled())
     {
@@ -1015,6 +1016,10 @@
     if ([SHAppStatus sharedInstance].allowSubmitFriendlyNames)
     {
         [self submitFriendlyNames];
+    }
+    if ([SHAppStatus sharedInstance].allowSubmitInteractiveButton)
+    {
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_SetInteractivePairButtons_Notification" object:nil];
     }
 }
 
@@ -1459,16 +1464,10 @@
         //If has friendly name to submit, do it.
         if (arrayViews.count > 0)
         {
-            NSData *data = [NSJSONSerialization dataWithJSONObject:arrayViews options:0 error:nil];
-            SHRequest *request = [SHRequest requestWithPath:@"/apps/submit_views/" withVersion:SHHostVersion_V1 withParams:nil withMethod:@"POST" withHeaders:nil withBodyOrStream:data]; //get by /apps/list_views
-            request.requestHandler = ^(SHRequest *request)
+            [[SHHTTPSessionManager sharedInstance] POST:@"/apps/submit_views/" hostVersion:SHHostVersion_V1 body:@{SH_BODY: shSerializeObjToJson(arrayViews)} success:nil failure:^(NSURLSessionDataTask * _Nullable task, NSError * _Nullable error)
             {
-                if (request.error != nil)
-                {
-                    SHLog(@"Fail to submit friendly name: %@", request.error); //submit friendly name not show error dialog to bother customer.
-                }
-            };
-            [request startAsynchronously];
+                SHLog(@"Fail to submit friendly name: %@", error); //submit friendly name not show error dialog to bother customer.
+            }];
         }
     }
 }
@@ -1502,6 +1501,15 @@
 - (BOOL)tagCuid:(NSString *)uniqueId
 {
     return [self tagString:uniqueId forKey:@"sh_cuid"];
+}
+
+- (BOOL)tagUserLanguage:(NSString *)language
+{
+    if (shStrIsEmpty(language))
+    {
+        language = [[NSLocale preferredLanguages] objectAtIndex:0];
+    }
+    return [self tagString:language forKey:@"sh_language"];
 }
 
 - (BOOL)tagString:(NSObject *)value forKey:(NSString *)key
@@ -1772,31 +1780,34 @@ NSString *SentInstall_IBeacon = @"SentInstall_IBeacon";
     SHInstall *fakeInstall = [[SHInstall alloc] initWithSuid:@"fake_install"];
     handler = [handler copy];
     NSAssert(StreetHawk.currentInstall == nil, @"Install should not exist when call installs/register/.");
-    SHRequest *request = [SHRequest requestWithPath:@"installs/register/" withVersion:SHHostVersion_V1 withParams:nil withMethod:@"POST" withHeaders:nil withBodyOrStream:[fakeInstall saveBody]];
-    request.requestHandler = ^(SHRequest *registerRequest)
+    [[SHHTTPSessionManager sharedInstance] POST:@"installs/register/" hostVersion:SHHostVersion_V1 body:[fakeInstall saveBody] success:^(NSURLSessionDataTask * _Nullable task, id  _Nullable responseObject)
     {
-        SHInstall *new_install = nil;
-        NSError *error = registerRequest.error;
-        if (registerRequest.error == nil)
+        NSAssert(responseObject != nil && [responseObject isKindOfClass:[NSDictionary class]], @"Register install return wrong json: %@.", responseObject);
+        if (responseObject != nil && [responseObject isKindOfClass:[NSDictionary class]])
         {
-            NSAssert(registerRequest.resultValue != nil && [registerRequest.resultValue isKindOfClass:[NSDictionary class]], @"Register install return wrong json: %@.", registerRequest.resultValue);
-            if (registerRequest.resultValue != nil && [registerRequest.resultValue isKindOfClass:[NSDictionary class]])
+            NSDictionary *dict = (NSDictionary *)responseObject;
+            SHInstall *new_install = [[SHInstall alloc] initWithSuid:dict[@"installid"]];
+            [new_install loadFromDictionary:dict];
+            if (handler)
             {
-                NSDictionary *dict = (NSDictionary *)registerRequest.resultValue;
-                new_install = [[SHInstall alloc] initWithSuid:dict[@"installid"]];
-                [new_install loadFromDictionary:dict];
-            }
-            else
-            {
-                error = [NSError errorWithDomain:SHErrorDomain code:0 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Register install return wrong json: %@.", registerRequest.resultValue]}];
+                handler(new_install, nil);
             }
         }
+        else
+        {
+            NSError *error = [NSError errorWithDomain:SHErrorDomain code:0 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Register install return wrong json: %@.", responseObject]}];
+            if (handler)
+            {
+                handler(nil, error);
+            }
+        }
+    } failure:^(NSURLSessionDataTask * _Nullable task, NSError * _Nullable error)
+    {
         if (handler)
         {
-            handler(new_install, error);
+            handler(nil, error);
         }
-    };
-    [request startAsynchronously];
+    }];
 }
 
 @end

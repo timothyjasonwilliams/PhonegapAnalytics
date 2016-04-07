@@ -748,66 +748,63 @@ enum
                 handler(nil, nil);
             return;
         }
-        SHRequest *request = [SHRequest requestWithPath:@"installs/log/" withVersion:SHHostVersion_V2 withParams:nil withMethod:@"POST" withHeaders:nil withBodyOrStream:@[@"records", postBody]];
         handler = [handler copy];
-        request.requestHandler = ^(SHRequest *logRequest)
+        [[SHHTTPSessionManager sharedInstance] POST:@"installs/log/" hostVersion:SHHostVersion_V2 body:@{@"records": postBody} success:^(NSURLSessionDataTask * _Nullable task, id  _Nullable responseObject)
+        {
+            //record last successfully post logs time.
+            BOOL postHeartbeat = NO;
+            BOOL postLocation = NO;
+            for (NSDictionary *logRecord in logRecords)
+            {
+                int code = [logRecord[@"code"] intValue];
+                if (code == LOG_CODE_HEARTBEAT)
+                {
+                    postHeartbeat = YES;
+                }
+                if (code == LOG_CODE_LOCATION_MORE || code == LOG_CODE_LOCATION_GEO)
+                {
+                    postLocation = YES;
+                }
+                if (postHeartbeat && postLocation)
+                {
+                    break;
+                }
+            }
+            if (postHeartbeat)
+            {
+                [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithDouble:[[NSDate date] timeIntervalSinceReferenceDate]] forKey:REGULAR_HEARTBEAT_LOGTIME];
+            }
+            if (postLocation)
+            {
+                [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithDouble:[[NSDate date] timeIntervalSinceReferenceDate]] forKey:REGULAR_LOCATION_LOGTIME];
+            }
+            if (postHeartbeat || postLocation)
+            {
+                [[NSUserDefaults standardUserDefaults] synchronize];
+            }
+            [self clearLogRecords:logRecords];
+            dispatch_semaphore_signal(self.upload_semaphore);
+            //finish
+            if (handler)
+                handler(nil, nil);
+        } failure:^(NSURLSessionDataTask * _Nullable task, NSError * _Nullable error)
         {
             //Since 2014-02-10, server save log in asynchronous way, so it does not return any error.
             //Update on 2015-02-27: dev returns error message for debugging, api return immediately.
-            if (logRequest.error != nil/* && error != [SHRequest requestCancelledError]*//*A running request still post data to server even it's canncelled, so still need to delete the logs from database to avoid sending duplicated logs.*/)
+            if (![error.domain isEqualToString:@"NSURLErrorDomain"] && StreetHawk.isDebugMode && shAppMode() != SHAppMode_AppStore && shAppMode() != SHAppMode_Enterprise)
             {
-                if (![logRequest.error.domain isEqualToString:@"NSURLErrorDomain"] && StreetHawk.isDebugMode && shAppMode() != SHAppMode_AppStore && shAppMode() != SHAppMode_Enterprise)
-                {
-                    //NSAssert(NO, @"Log meets error (%@) for records: %@.", logRequest.error, logRecords); //comment this as dev returns error and crash App, make it cannot continue.
-                }
-                if (logRequest.error.code == 404)
-                {
-                    StreetHawk.currentInstall = nil;
-                    [StreetHawk registerOrUpdateInstallWithHandler:nil];
-                }
-                dispatch_semaphore_signal(self.upload_semaphore);
+                //NSAssert(NO, @"Log meets error (%@) for records: %@.", logRequest.error, logRecords); //comment this as dev returns error and crash App, make it cannot continue.
             }
-            else
+            if (error.code == 404)
             {
-                //record last successfully post logs time.
-                BOOL postHeartbeat = NO;
-                BOOL postLocation = NO;
-                for (NSDictionary *logRecord in logRecords)
-                {
-                    int code = [logRecord[@"code"] intValue];
-                    if (code == LOG_CODE_HEARTBEAT)
-                    {
-                        postHeartbeat = YES;
-                    }
-                    if (code == LOG_CODE_LOCATION_MORE || code == LOG_CODE_LOCATION_GEO)
-                    {
-                        postLocation = YES;
-                    }
-                    if (postHeartbeat && postLocation)
-                    {
-                        break;
-                    }
-                }
-                if (postHeartbeat)
-                {
-                    [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithDouble:[[NSDate date] timeIntervalSinceReferenceDate]] forKey:REGULAR_HEARTBEAT_LOGTIME];
-                }
-                if (postLocation)
-                {
-                    [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithDouble:[[NSDate date] timeIntervalSinceReferenceDate]] forKey:REGULAR_LOCATION_LOGTIME];
-                }
-                if (postHeartbeat || postLocation)
-                {
-                    [[NSUserDefaults standardUserDefaults] synchronize];
-                }
-                [self clearLogRecords:logRecords];
-                dispatch_semaphore_signal(self.upload_semaphore);
+                StreetHawk.currentInstall = nil;
+                [StreetHawk registerOrUpdateInstallWithHandler:nil];
             }
+            dispatch_semaphore_signal(self.upload_semaphore);
             //finish
             if (handler)
-                handler(nil, logRequest.error);
-        };
-        [request startAsynchronously];
+                handler(nil, error);
+        }];
     }    
 }
 
@@ -847,6 +844,7 @@ enum
     [[NSUserDefaults standardUserDefaults] setObject:@"" forKey:@"INSTALL_SUID_KEY"]; //clear local install id, next will register a new one. This is most important, otherwise logs cannot submit due to conflict logid.
     [[NSUserDefaults standardUserDefaults] setObject:@(NO) forKey:@"APPSTATUS_REREGISTER"];  //clear reregister flag
     [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:@"NumTimesAppUsed"]; //report "App first run" instead of "App started and engine initialized".
+    [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:@"TAG_SHLANGUAGE"]; //re-tag sh_language for new install
     [[NSUserDefaults standardUserDefaults] setObject:@(0) forKey:MAX_LOGID]; //local SQLite will be delete and rebuild, sent record reset to 0.
     [[NSUserDefaults standardUserDefaults] setObject:@"" forKey:@"SETTING_UTC_OFFSET"]; //make new install submit utc offset for first time.
     [[NSUserDefaults standardUserDefaults] setObject:@"" forKey:@"ENTER_PAGE_HISTORY"];  //new install not have enter/exit history
@@ -863,8 +861,8 @@ enum
     //Sent history: SentInstall_AppKey, SentInstall_ClientVersion, SentInstall_ShVersion, SentInstall_Mode, SentInstall_Carrier, SentInstall_OSVersion, SentInstall_IBeacon. They are reset after install/register.
     //Module bridge: SH_GEOLOCATION_LAT, SH_GEOLOCATION_LNG, SH_BEACON_BLUETOOTH, SH_BEACON_iBEACON. They are reset after launch.
     //Crash report: CrashLog_MD5. Make sure not sent duplicate crash report again in new install.
-    //Customer setting: ENABLE_LOCATION_SERVICE, ENABLE_PUSH_NOTIFICATION, FRIENDLYNAME_KEY. Cannot reset, must keep same setting as previous install.
-    //Keep old version and adjust by App itself: APPKEY_KEY, NETWORK_RECOVER_TIME, APPSTATUS_STREETHAWKENABLED, APPSTATUS_DEFAULT_HOST, APPSTATUS_ALIVE_HOST, APPSTATUS_UPLOAD_LOCATION, APPSTATUS_SUBMIT_FRIENDLYNAME, APPSTATUS_CHECK_TIME, APPSTATUS_APPSTOREID, APPSTATUS_DISABLECODES, APPSTATUS_PRIORITYCODES, REGULAR_HEARTBEAT_LOGTIME, REGULAR_LOCATION_LOGTIME, SMART_PUSH_PAYLOAD. These will be updated automatically by App, keep old version till next App update them.
+    //Customer setting: ENABLE_LOCATION_SERVICE, ENABLE_PUSH_NOTIFICATION, FRIENDLYNAME_KEY, SH_INTERACTIVEPUSH_KEY. Cannot reset, must keep same setting as previous install.
+    //Keep old version and adjust by App itself: APPKEY_KEY, NETWORK_RECOVER_TIME, APPSTATUS_STREETHAWKENABLED, APPSTATUS_DEFAULT_HOST, APPSTATUS_ALIVE_HOST, APPSTATUS_UPLOAD_LOCATION, APPSTATUS_SUBMIT_FRIENDLYNAME, APPSTATUS_SUBMIT_INTERACTIVEBUTTONS, APPSTATUS_CHECK_TIME, APPSTATUS_APPSTOREID, APPSTATUS_DISABLECODES, APPSTATUS_PRIORITYCODES, REGULAR_HEARTBEAT_LOGTIME, REGULAR_LOCATION_LOGTIME, SMART_PUSH_PAYLOAD. These will be updated automatically by App, keep old version till next App update them.
     //APPSTATUS_GEOFENCE_FETCH_LIST: cannot reset to empty, otherwise when change cannot find previous fence so not stop monitor.
     //User pass in: ADS_IDENTIFIER. Should not delete, move to next install.
     //SPOTLIGHT_DEEPLINKING_MAPPING: cannot reset to empty, otherwise when spotlight search cannot find mapping.
@@ -921,7 +919,7 @@ enum
     {
         NSAssert(assocId == 0, @"Try to do none push or feed related log (%@) with assoc id (%ld).", comment, (long)assocId);
     }
-    NSAssert(self.logger != nil, @"Lose logline due to logger is not ready.");
+     
     [self.logger logComment:comment atTime:[NSDate date] forCode:code forAssocId:assocId withResult:result withHandler:handler];
 }
 
