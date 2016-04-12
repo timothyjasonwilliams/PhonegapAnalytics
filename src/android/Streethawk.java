@@ -16,19 +16,22 @@ import org.apache.cordova.PluginResult;
 import org.apache.cordova.CordovaActivity;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import com.streethawk.library.core.ISHEventObserver;
+import android.app.Activity;
 
 
-/**
- * This class echoes a string called from JavaScript.
- */
-public class Streethawk extends CordovaPlugin {
+public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 
 	private final String TAG = "StreetHawk";
 	private final String SUBTAG = "Core-Plugin ";
 	private final int PERMISSIONS_LOCATION = 0;
 	private final int PERMISSIONS_GEOFENCE = 1;
 	private String mSenderID = null;
-
+    private static JSONObject mPartnerModuleMessage = null;
+    private final String INSTALLID = "installid";
+    
+    private static CallbackContext mEventObserverCallback;
+	
 	@Override
 	public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
 		if(action.equals("streethawkinit")) {            	
@@ -77,11 +80,9 @@ public class Streethawk extends CordovaPlugin {
 			return shGetAppKey(callbackContext);
 		}
 		if(action.equals("shDeeplinking")){
-			Log.e("Anurag","shDeeplinking in java 1");
 			return processDeeplinkRequest(callbackContext);
 		}
 		if(action.equals("shSendSimpleFeedback")){
-			Log.e("Anurag","i am here 1");
 			return shSendSimpleFeedback(args);
 		}
 		if(action.equals("shOnResume")){
@@ -90,10 +91,22 @@ public class Streethawk extends CordovaPlugin {
 		if(action.equals("shOnPause")){
 			return shOnPause();
 		}
-
+        
+        //Added in 1.8.0
+        if(action.equals("tagUserLanguage")) {
+			return tagUserLanguage(args);
+		}
+        if(action.equals("registerInstallEventCallback")){
+            return registerInstallEventCallback(callbackContext);
+        }
+        if(action.equals("getFormattedDateTime")){
+            return getFormattedDateTime(args,callbackContext);
+        }
+        
 		/*PUSH Plugin*/
 		if(action.equals("shSetGcmSenderId")){
 			mSenderID = args.getString(0);
+            registerISHObserver();
 		}
 		if(action.equals("registerPushDataCallback")){
 			return pushDataCallback(callbackContext);
@@ -125,8 +138,27 @@ public class Streethawk extends CordovaPlugin {
 		if(action.equals("sendPushResult")){
 			return sendPushResult(args);
 		}
-
-
+        //Added in 1.8.0
+        if(action.equals("registerNonSHPushPayloadObserver")){
+			return registerNonSHPushPayloadObserver(callbackContext);
+		}
+        if(action.equals("getIcon")){
+			return getIcon(args,callbackContext);
+		}
+        if(action.equals("getButtonPairFromId")){
+			Log.i(TAG,SUBTAG+" getButtonPairFromId doenst do anythig in..");
+            return true;
+		}
+        if(action.equals("addInteractivePushButtonPair")){
+			return addInteractivePushButtonPair(args);
+		}
+        if(action.equals("addInteractivePushButtonPairWithIcon")){
+			return addInteractivePushButtonPair2(args);
+		}
+        if(action.equals("setInteractivePushBtnPair")){
+			return setInteractivePushBtnPair();
+		}
+        
 		/*GROWTH plugin*/
 		if(action.equals("getShareUrlForAppDownload")){
 			return originateShareWithCampaign(args,callbackContext);
@@ -134,18 +166,27 @@ public class Streethawk extends CordovaPlugin {
 		if(action.equals("originateShareWithCampaign")){
 			return originateShareWithSourceSelection(args);
 		}
+        //shdeeplinking is in core
 
 		/*BEACON plugin*/
-
 		if(action.equals("shEnterBeacon")){
 			return shEnterBeacon(args);
 		}
 		if(action.equals("shExitBeacon")){
 			return shExitBeacon(args);
 		}
-
+        //Added in 1.8.0
+        if(action.equals("setNotifyBeaconDetectCallback")){
+            return setNotifyBeaconDetectCallback(callbackContext);
+        }   
+        if(action.equals("startBeaconMonitoring")){
+            return startBeaconMonitoring();
+        }
+        if(action.equals("stopBeaconMonitoring")){
+            return stopBeaconMonitoring();
+        }
+     
 		/* FEEDS plugin */
-
 		if(action.equals("notifyNewFeedCallback")){
 			return notifyNewFeedCallback(callbackContext);
 		}
@@ -164,7 +205,6 @@ public class Streethawk extends CordovaPlugin {
 		}
 
 		/* Location Plugin */
-
 		if(action.equals("shStartLocationReporting")){
 			return shStartLocationReporting();
 		}
@@ -191,7 +231,11 @@ public class Streethawk extends CordovaPlugin {
 		if(action.equals("shStartGeofenceWithPermissionDialog")){
 			return shStartGeofenceWithPermissionDialog(args);
 		}
-
+        //Added in 1.8.0
+        if(action.equals("setNotifyGeofenceEventCallback")){
+            return setNotifyGeofenceEventCallback(callbackContext);
+        }
+        
 		/*IOS Specific*/
 		if(action.equals("shSetiTunesId")){
 			return true;
@@ -223,6 +267,10 @@ public class Streethawk extends CordovaPlugin {
 		Log.e(TAG,SUBTAG+"Not found "+action);
 		return false;
 	}
+
+   
+
+
 
 	private boolean setAppKey(JSONArray args)throws JSONException{
 		String appKey = args.getString(0);	
@@ -316,9 +364,17 @@ public class Streethawk extends CordovaPlugin {
 	}
 	private boolean incrementTag(JSONArray args)throws JSONException{
 		String tag 	 = args.getString(0);
-		StreetHawk.INSTANCE.incrementTag(tag);
+		int value=0;
+        try{
+           value = args.getInt(1); 
+        }catch(JSONException e){
+            value=1;
+        }
+        StreetHawk.INSTANCE.incrementTag(tag,value);
 		return true;
 	}
+    
+    
 	private boolean removeTag(JSONArray args)throws JSONException{
 		String tag 	 = args.getString(0);
 		StreetHawk.INSTANCE.removeTag(tag);
@@ -349,6 +405,15 @@ public class Streethawk extends CordovaPlugin {
 		callbackContext.success(result);
 		return true;
 	}
+    
+   //Added in 1.8.0
+    private boolean getFormattedDateTime(JSONArray args,CallbackContext callbackContext)throws JSONException{
+        long time  = args.getLong(0);
+        String formattedTime = StreetHawk.getFormattedDateTime(time);
+        callbackContext.success(formattedTime);
+		return true;
+    }
+   
 	private boolean shGetAppKey(CallbackContext callbackContext){
 		String result = StreetHawk.INSTANCE.getAppKey(cordova.getActivity().getApplicationContext());
 		Log.i(TAG,SUBTAG+"Appkey = "+result);
@@ -356,14 +421,53 @@ public class Streethawk extends CordovaPlugin {
 		return true;
 	}
 	private boolean processDeeplinkRequest(CallbackContext callbackContext){
-		if(null==callbackContext)
+        if(null==callbackContext)
 			return false;
 		final Intent intent = ((CordovaActivity) this.webView.getContext()).getIntent();
 		String url = null;
 		if(null!=intent){
-			url =intent.getDataString();
-		}
-		callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, url));
+			url =intent.getDataString();       
+        }
+        if(null==url){
+            // Send pointzi install url
+            final Context context = cordova.getActivity().getApplicationContext();
+            Class noParams[] = {};
+            Class[] paramContext = new Class[1];
+            paramContext[0] = Context.class;
+            
+            Class[] callbackParams = new Class[2];
+            callbackParams[0] = Activity.class;
+            callbackParams[1] = CallbackContext.class;
+            
+            Object[] obj = new Object[2];
+            obj[0] = cordova.getActivity();
+            obj[1] = callbackContext;
+
+            try {
+                Class geoWrapper = Class.forName("com.streethawk.growth.GrowthWrapper");
+                Method wrapperMethod = geoWrapper.getMethod("getInstance",noParams);
+                Object objWrapper = wrapperMethod.invoke(null);
+                if(null!=objWrapper){
+                    Method registerSHObserver = geoWrapper.getDeclaredMethod("setGrowthCallback", callbackParams);
+                    registerSHObserver.invoke(objWrapper,obj);
+                }
+            } catch (ClassNotFoundException e1) {
+                Log.w(TAG,SUBTAG+"Growth module is not  not present");
+                return false;
+            } catch (IllegalAccessException e1) {
+                e1.printStackTrace();
+                return false;
+            } catch (NoSuchMethodException e1) {
+                e1.printStackTrace();
+                return false;
+            } catch (InvocationTargetException e1) {
+                e1.printStackTrace();
+                return false;
+            }
+            return true;   
+        }else{
+            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, url));
+        }
 		return true;
 	}
 	private boolean shSendSimpleFeedback(JSONArray args)throws JSONException{
@@ -380,7 +484,34 @@ public class Streethawk extends CordovaPlugin {
     	StreetHawk.INSTANCE.shActivityPaused(cordova.getActivity());
     	return true;
     }
-
+    
+    //Added in 1.8.0
+    private boolean tagUserLanguage(JSONArray args)throws JSONException{
+		String language = args.getString(0);	
+		StreetHawk.INSTANCE.tagUserLanguage(language);
+		return true;
+	}
+    
+    public boolean registerInstallEventCallback(CallbackContext cb){
+		mEventObserverCallback = cb;
+        return true;
+	}
+    
+    @Override
+    public void onInstallRegistered(String install_id){
+     if(null!=mEventObserverCallback){
+			try{
+				JSONObject pushDataJSON = new JSONObject();  	   
+				pushDataJSON.put(INSTALLID,install_id);
+				PluginResult presult = new PluginResult(PluginResult.Status.OK,pushDataJSON);
+				presult.setKeepCallback(true);
+				mEventObserverCallback.sendPluginResult(presult);
+			}catch(JSONException e){
+				Log.e(TAG,SUBTAG+"JSONException "+e);
+			}
+		}
+    }
+   
 	/*PUSH API */	
 	private void addPushModule(){
 		final Context context = cordova.getActivity().getApplicationContext();
@@ -470,7 +601,6 @@ public class Streethawk extends CordovaPlugin {
 		return true;
 	}
 
-
 	private boolean setUseCustomDialog(JSONArray args)throws JSONException{
 		final Context context = cordova.getActivity().getApplicationContext();
 		final boolean enable = args.getBoolean(0);
@@ -537,6 +667,38 @@ public class Streethawk extends CordovaPlugin {
 		}).start();
 		return true;
 	}
+    
+    private boolean registerISHObserver(){
+        final Context context = cordova.getActivity().getApplicationContext();
+		Class[] paramContext = new Class[1];
+		paramContext[0] = Context.class;
+		Class[] callbackParams = new Class[1];
+		callbackParams[0] = Activity.class;
+		Class noParams[] = {};
+		try {
+			Class pushWrapper = Class.forName("com.streethawk.push.PushWrapper");
+			Method wrapperMethod = pushWrapper.getMethod("getInstance",noParams);
+			Object objWrapper = wrapperMethod.invoke(null);
+			if(null!=objWrapper){
+				Method registerSHObserver = pushWrapper.getDeclaredMethod("registerSHObserver", callbackParams);
+				registerSHObserver.invoke(objWrapper,cordova.getActivity());
+			}
+		} catch (ClassNotFoundException e1) {
+			Log.w(TAG,SUBTAG+"Push module is not  not present");
+			return false;
+		} catch (IllegalAccessException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (NoSuchMethodException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (InvocationTargetException e1) {
+			e1.printStackTrace();
+			return false;
+		}
+		return true;
+    }
+    
 
 	/**
 	 * PushData callback
@@ -639,7 +801,158 @@ public class Streethawk extends CordovaPlugin {
 			return false;
 		}
 		return true;
+    }
+    /*
+    * Register for third party push payload  
+    */
+    private boolean registerNonSHPushPayloadObserver(CallbackContext callbackContext){
+		final Context context = cordova.getActivity().getApplicationContext();
+		Class noParams[] = {};
+		Class[] paramContext = new Class[1];
+		paramContext[0] = Context.class;
+		Class[] callbackParams = new Class[1];
+		callbackParams[0] = CallbackContext.class;
+		try {
+			Class pushWrapper = Class.forName("com.streethawk.push.PushWrapper");
+			Method wrapperMethod = pushWrapper.getMethod("getInstance",noParams);
+			Object objWrapper = wrapperMethod.invoke(null);
+			if(null!=objWrapper){
+				Method registerSHObserver = pushWrapper.getDeclaredMethod("registerNonSHPushPayloadObserver", callbackParams);
+				registerSHObserver.invoke(objWrapper,callbackContext);
+			}
+		} catch (ClassNotFoundException e1) {
+			Log.w(TAG,SUBTAG+"Push module is not  not present");
+			return false;
+		} catch (IllegalAccessException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (NoSuchMethodException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (InvocationTargetException e1) {
+			e1.printStackTrace();
+			return false;
+		}
+		return true;
 	}
+    
+     private boolean addInteractivePushButtonPair(JSONArray args)throws JSONException{
+		final Context context = cordova.getActivity().getApplicationContext();
+        final String b1Title = args.getString(0);
+        final String b2Title = args.getString(1);
+        final String pairName = args.getString(2);
+		new Thread(new Runnable() {
+			@Override
+			public void run() {
+				Class argParams[] = new Class[1];
+				argParams[0] = String.class;
+                argParams[1] = String.class;
+                argParams[2] = String.class;
+				Class[] paramContext = new Class[1];
+				paramContext[0] = Context.class;
+				Class push = null;
+				try {
+					push = Class.forName("com.streethawk.library.push.Push");
+					Method pushMethod = push.getMethod("getInstance", paramContext);
+					Object obj = pushMethod.invoke(null,context);
+					if (null != obj) {
+						Method addPushModule = push.getDeclaredMethod("addInteractivePushButtonPair", argParams);
+						addPushModule.invoke(obj,b1Title,b2Title,pairName);
+					}
+				} catch (ClassNotFoundException e1) {
+					Log.w(TAG,SUBTAG+"No Push module found. Add streethawk push plugin");
+				} catch (IllegalAccessException e1) {
+					e1.printStackTrace();
+				} catch (NoSuchMethodException e1) {
+					e1.printStackTrace();
+				} catch (InvocationTargetException e1) {
+					e1.printStackTrace();
+				}
+			}
+		}).start();
+		return true;
+	}
+    
+    
+    private boolean setInteractivePushBtnPair()throws JSONException{
+		final Context context = cordova.getActivity().getApplicationContext();
+		new Thread(new Runnable() {
+			@Override
+			public void run() {
+                Class noParams[] = {};
+				Class[] paramContext = new Class[1];
+				paramContext[0] = Context.class;
+				Class push = null;
+				try {
+					push = Class.forName("com.streethawk.library.push.Push");
+					Method pushMethod = push.getMethod("getInstance", paramContext);
+					Object obj = pushMethod.invoke(null,context);
+					if (null != obj) {
+						Method addPushModule = push.getDeclaredMethod("setInteractivePushBtnPair",noParams);
+						addPushModule.invoke(obj);
+					}
+				} catch (ClassNotFoundException e1) {
+					Log.w(TAG,SUBTAG+"No Push module found. Add streethawk push plugin");
+				} catch (IllegalAccessException e1) {
+					e1.printStackTrace();
+				} catch (NoSuchMethodException e1) {
+					e1.printStackTrace();
+				} catch (InvocationTargetException e1) {
+					e1.printStackTrace();
+				}
+			}
+		}).start();
+		return true;
+	}
+       
+    /**
+    *
+    */
+    private boolean addInteractivePushButtonPair2(JSONArray args)throws JSONException{
+		final Context context = cordova.getActivity().getApplicationContext();
+        final String b1Title = args.getString(0);
+        final String b1Icon = args.getString(1);
+        final String b2Title = args.getString(2);
+        final String b2Icon = args.getString(3); 
+        final String pairName = args.getString(4);
+       
+		Class noParams[] = {};
+		new Thread(new Runnable() {
+			@Override
+			public void run() {
+				Class argParams[] = new Class[1];
+				argParams[0] = String.class;
+                argParams[1] = String.class;
+                argParams[2] = String.class;
+                argParams[3] = String.class;
+                argParams[4] = String.class;
+				Class[] paramContext = new Class[1];
+				paramContext[0] = Context.class;
+				Class push = null;
+				try {
+					push = Class.forName("com.streethawk.library.push.Push");
+					Method pushMethod = push.getMethod("getInstance", paramContext);
+					Object obj = pushMethod.invoke(null,context);
+					if (null != obj) {
+						Method addPushModule = push.getDeclaredMethod("addInteractivePushButtonPairWithIcon", argParams);
+						addPushModule.invoke(obj,b1Title,b2Icon,b2Title,b2Icon,pairName);
+					}
+				} catch (ClassNotFoundException e1) {
+					Log.w(TAG,SUBTAG+"No Push module found. Add streethawk push plugin");
+				} catch (IllegalAccessException e1) {
+					e1.printStackTrace();
+				} catch (NoSuchMethodException e1) {
+					e1.printStackTrace();
+				} catch (InvocationTargetException e1) {
+					e1.printStackTrace();
+				}
+			}
+		}).start();
+		return true;
+	}
+    
+    
+    
 
 	/**
 	 * Notify page callback
@@ -674,10 +987,8 @@ public class Streethawk extends CordovaPlugin {
 		}
 		return true;
 	}
-
-
+    
 	private boolean shGetViewName(CallbackContext callbackContext){
-		Log.e("Anurag","shGetViewName");
 		final Context context = cordova.getActivity().getApplicationContext();
 		Class noParams[] = {};
 		Class[] paramContext = new Class[1];
@@ -689,11 +1000,8 @@ public class Streethawk extends CordovaPlugin {
 			Object obj = pushMethod.invoke(null,context);
 			if (null != obj) {
 				Method addPushModule = push.getDeclaredMethod("getAppPage", noParams);
-				Log.e("Anurag","shGetViewName 1");
 				Object result = addPushModule.invoke(obj);
-				Log.e("Anurag","apppage"+result);
 				if(result instanceof String){
-					Log.e("Anurag","apppage 2"+result);
 					String tmp = ((String)result);
 					callbackContext.success(tmp);
 				}
@@ -746,9 +1054,51 @@ public class Streethawk extends CordovaPlugin {
 			}).start();
 			return true;
 	    }
-
-
-
+        
+        /**
+         * Function returns icon resid of given icon name
+         */
+        private boolean getIcon(JSONArray args,CallbackContext callbackContext){
+		final Context context = cordova.getActivity().getApplicationContext();
+        String iconName;
+        try{
+            iconName= args.getString(0);
+        }catch(JSONException e){
+           iconName=null; 
+        }
+        if(null==iconName)
+            return false;	
+		Class noParams[] = {};
+		Class[] paramContext = new Class[1];
+		paramContext[0] = Context.class;
+        Class[] name = new Class[1];
+		name[0] = String.class; 
+		Class push = null;
+		try {
+			push = Class.forName("com.streethawk.library.push.Push");
+			Method pushMethod = push.getMethod("getInstance", paramContext);
+			Object obj = pushMethod.invoke(null,context);
+			if (null != obj) {
+				Method addPushModule = push.getDeclaredMethod("getIcon",name);
+				Object result = addPushModule.invoke(obj);
+				if(result instanceof Integer){
+					//Broken
+                    int tmp = -1;
+					callbackContext.success(tmp);
+				}
+			}
+		} catch (ClassNotFoundException e1) {
+			Log.w(TAG,SUBTAG+"No Push module found. Add streethawk push plugin");
+		} catch (IllegalAccessException e1) {
+			e1.printStackTrace();
+		} catch (NoSuchMethodException e1) {
+			e1.printStackTrace();
+		} catch (InvocationTargetException e1) {
+			e1.printStackTrace();
+		}
+		return true;
+	}
+        
 	/*GROWTH API*/
 	private boolean originateShareWithCampaign(JSONArray args, CallbackContext callbackContext)throws JSONException{
 		final Activity activity = cordova.getActivity();
@@ -835,8 +1185,8 @@ public class Streethawk extends CordovaPlugin {
 			Method instance = beacon.getMethod("getInstance",paramContext);
 			Object obj = instance.invoke(null,context);
 			if(null!=obj){
-				Method shEnterBeacon = beacon.getDeclaredMethod("shEnterBeacon",params);
-				shEnterBeacon.invoke(obj,UUID,major,minor,distance);
+				Method method = beacon.getDeclaredMethod("shEnterBeacon",params);
+				method.invoke(obj,UUID,major,minor,distance);
 			}
 		} catch (ClassNotFoundException e1) {
 			Log.w(TAG,SUBTAG+"Beacon module is not  not present");
@@ -872,8 +1222,8 @@ public class Streethawk extends CordovaPlugin {
 			Method instance = beacon.getMethod("getInstance",paramContext);
 			Object obj = instance.invoke(null,context);
 			if(null!=obj){
-				Method shEnterBeacon = beacon.getDeclaredMethod("shExitBeacon",params);
-				shEnterBeacon.invoke(obj,UUID,major,minor);
+				Method method = beacon.getDeclaredMethod("shExitBeacon",params);
+				method.invoke(obj,UUID,major,minor);
 			}
 		} catch (ClassNotFoundException e1) {
 			Log.w(TAG,SUBTAG+"Beacon module is not  not present");
@@ -890,7 +1240,68 @@ public class Streethawk extends CordovaPlugin {
 		}
 		return true;
 	}
-
+    
+    //Added in 1.8.0
+    private boolean startBeaconMonitoring()throws JSONException{
+		final Context context = cordova.getActivity().getApplicationContext();
+		Class[] paramContext = new Class[1];
+		paramContext[0] = Context.class;
+		Class noParams[] = {};
+		Class[] params = new Class[0];
+		try {
+			Class beacon = Class.forName("com.streethawk.library.beacon.Beacons");
+			Method instance = beacon.getMethod("getInstance",paramContext);
+			Object obj = instance.invoke(null,context);
+			if(null!=obj){
+				Method method = beacon.getDeclaredMethod("startBeaconMonitoring",noParams);
+				method.invoke(obj);
+			}
+		} catch (ClassNotFoundException e1) {
+			Log.w(TAG,SUBTAG+"Beacon module is not  not present");
+			return false;
+		} catch (IllegalAccessException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (NoSuchMethodException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (InvocationTargetException e1) {
+			e1.printStackTrace();
+			return false;
+		}
+		return true;
+	  }
+    
+     private boolean stopBeaconMonitoring()throws JSONException{
+		final Context context = cordova.getActivity().getApplicationContext();
+		Class[] paramContext = new Class[1];
+		paramContext[0] = Context.class;
+		Class noParams[] = {};
+		Class[] params = new Class[0];
+		try {
+			Class beacon = Class.forName("com.streethawk.library.beacon.Beacons");
+			Method instance = beacon.getMethod("getInstance",paramContext);
+			Object obj = instance.invoke(null,context);
+			if(null!=obj){
+				Method method = beacon.getDeclaredMethod("stopBeaconMonitoring",params);
+				method.invoke(obj);
+			}
+		} catch (ClassNotFoundException e1) {
+			Log.w(TAG,SUBTAG+"Beacon module is not  not present");
+			return false;
+		} catch (IllegalAccessException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (NoSuchMethodException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (InvocationTargetException e1) {
+			e1.printStackTrace();
+			return false;
+		}
+		return true;
+	}
+    
 	/* FEED API */
 	
 	private boolean notifyNewFeedCallback(CallbackContext callbackContext){	
@@ -904,8 +1315,8 @@ public class Streethawk extends CordovaPlugin {
 			Method wrapperMethod = feedWrapper.getMethod("getInstance",noParams);
 			Object objWrapper = wrapperMethod.invoke(null);
 			if(null!=objWrapper){
-				Method registerFeed = feedWrapper.getDeclaredMethod("notifyNewFeedCallback",params);
-				registerFeed.invoke(objWrapper,context,callbackContext);
+				Method method = feedWrapper.getDeclaredMethod("notifyNewFeedCallback",params);
+				method.invoke(objWrapper,context,callbackContext);
 			}
 		} catch (ClassNotFoundException e1) {
 			Log.w(TAG,SUBTAG+"Feed module is not  not present");
@@ -934,8 +1345,8 @@ public class Streethawk extends CordovaPlugin {
 			Method wrapperMethod = feedWrapper.getMethod("getInstance",noParams);
 			Object objWrapper = wrapperMethod.invoke(null);
 			if(null!=objWrapper){
-				Method registerFeed = feedWrapper.getDeclaredMethod("registerFeed",params);
-				registerFeed.invoke(objWrapper,context,callbackContext);
+				Method method = feedWrapper.getDeclaredMethod("registerFeed",params);
+				method.invoke(objWrapper,context,callbackContext);
 			}
 		} catch (ClassNotFoundException e1) {
 			Log.w(TAG,SUBTAG+"Feed module is not  not present");
@@ -968,8 +1379,8 @@ public class Streethawk extends CordovaPlugin {
 			Method wrapperMethod = feeds.getMethod("getInstance",params);
 			Object objWrapper = wrapperMethod.invoke(null,context);
 			if(null!=objWrapper){
-				Method notifyFeedResult = feeds.getDeclaredMethod("notifyFeedResult",methodParams);
-				notifyFeedResult.invoke(objWrapper,FeedId,result);
+				Method method = feeds.getDeclaredMethod("notifyFeedResult",methodParams);
+				method.invoke(objWrapper,FeedId,result);
 			}
 		} catch (ClassNotFoundException e1) {
 			Log.w(TAG,SUBTAG+"Feed module is not  not present");
@@ -1302,4 +1713,80 @@ public class Streethawk extends CordovaPlugin {
 		}
 		return true;
 	}
+    
+    /**
+	 * Beacon Detect Callback
+	 */
+	private boolean setNotifyBeaconDetectCallback(CallbackContext callbackContext){
+		final Context context = cordova.getActivity().getApplicationContext();
+		Class noParams[] = {};
+		Class[] paramContext = new Class[1];
+		paramContext[0] = Context.class;
+		Class[] callbackParams = new Class[2];
+        callbackParams[0] = Activity.class;
+        callbackParams[1] = CallbackContext.class;   
+        Object[] obj = new Object[2];
+        obj[0] = cordova.getActivity();
+        obj[1] = callbackContext; 
+		try {
+			Class beaconWrapper = Class.forName("com.streethawk.beacon.BeaconWrapper");
+			Method wrapperMethod = beaconWrapper.getMethod("getInstance",noParams);
+			Object objWrapper = wrapperMethod.invoke(null);
+			if(null!=objWrapper){
+				Method registerSHObserver = beaconWrapper.getDeclaredMethod("setNotifyBeaconDetectCallback", callbackParams);
+				registerSHObserver.invoke(objWrapper,obj);
+			}
+		} catch (ClassNotFoundException e1) {
+			Log.w(TAG,SUBTAG+"Beacon module is not  not present");
+			return false;
+		} catch (IllegalAccessException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (NoSuchMethodException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (InvocationTargetException e1) {
+			e1.printStackTrace();
+			return false;
+		}
+		return true;
+	}
+ 
+     /**
+	 * Geofence Detect Callback
+	 */
+	private boolean setNotifyGeofenceEventCallback(CallbackContext callbackContext){
+		final Context context = cordova.getActivity().getApplicationContext();
+		Class noParams[] = {};
+		Class[] paramContext = new Class[1];
+		paramContext[0] = Context.class;
+         Class[] callbackParams = new Class[2];
+         callbackParams[0] = Activity.class;
+         callbackParams[1] = CallbackContext.class;   
+         Object[] obj = new Object[2];
+         obj[0] = cordova.getActivity();
+         obj[1] = callbackContext;        
+		try {
+			Class geoWrapper = Class.forName("com.streethawk.geofence.GeofenceWrapper");
+			Method wrapperMethod = geoWrapper.getMethod("getInstance",noParams);
+			Object objWrapper = wrapperMethod.invoke(null);
+			if(null!=objWrapper){
+				Method registerSHObserver = geoWrapper.getDeclaredMethod("setNotifyGeofenceEventCallback", callbackParams);
+				registerSHObserver.invoke(objWrapper,obj);
+			}
+		} catch (ClassNotFoundException e1) {
+			Log.w(TAG,SUBTAG+"Geofence module is not  not present");
+			return false;
+		} catch (IllegalAccessException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (NoSuchMethodException e1) {
+			e1.printStackTrace();
+			return false;
+		} catch (InvocationTargetException e1) {
+			e1.printStackTrace();
+			return false;
+		}
+		return true;
+	}  
 }

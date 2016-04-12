@@ -62,6 +62,12 @@ SHLibrary.prototype.tagDatetime = function(string_key, datetime_value, appSucces
 SHLibrary.prototype.incrementTag = function(string_key, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'incrementTag', [string_key]);
 }
+//Added in 1.8.0
+SHLibrary.prototype.incrementTag = function(string_key,int_value, appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'incrementTag', [string_key,int_value]);
+}
+
+
 SHLibrary.prototype.removeTag = function(string_key, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'removeTag', [string_key]);
 }
@@ -86,11 +92,23 @@ SHLibrary.prototype.getCurrentFormattedDateTime = function(appSuccess, appFail) 
 SHLibrary.prototype.shGetAppKey = function(appSuccess, appFail) {
     exec(appSuccess, appFail,'Streethawk', 'shGetAppKey', []);
 }
+//starting 1.8.0,Note this function works for both core and growth
 SHLibrary.prototype.shDeeplinking = function(appSuccess, appFail) {
     exec(appSuccess, appFail,'Streethawk', 'shDeeplinking', []);
 }
 SHLibrary.prototype.shSendSimpleFeedback = function(string_title, string_message, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shSendSimpleFeedback', [string_title, string_message]);
+}
+
+/*Added in 1.8.0*/
+SHLibrary.prototype.tagUserLanguage = function(string_userlang, appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'tagUserLanguage', [string_userlang]);
+}
+SHLibrary.prototype.registerInstallEventCallback = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'registerInstallEventCallback', []);
+}
+SHLibrary.prototype.getFormattedDateTime = function(long_time,appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'getFormattedDateTime', [long_time]);
 }
 
 // Push plugin
@@ -128,6 +146,24 @@ SHLibrary.prototype.forcePushToNotificationBar = function(bool_status, appSucces
 SHLibrary.prototype.sendPushResult = function(int_msgid, int_pushresult, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'sendPushResult', [int_msgid, int_pushresult]);
 }
+SHLibrary.prototype.registerNonSHPushPayloadObserver = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'registerNonSHPushPayloadObserver', []);
+}
+SHLibrary.prototype.getIcon = function(string_iconname,appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'getIcon', [string_iconname]);
+}
+SHLibrary.prototype.getButtonPairFromId = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'getButtonPairFromId', []);
+}
+SHLibrary.prototype.addInteractivePushButtonPairWithIcons = function(string_b1,string_I1,string_b2,string_I2,string_pairname,appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'addInteractivePushButtonPair2', [string_b1,string_I1,string_b2,string_I2,string_pairname]);
+}
+SHLibrary.prototype.addInteractivePushButtonPair = function(string_b1,string_b2,string_pairname,appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'addInteractivePushButtonPair', [string_b1,string_b2,string_pairname]);
+}
+SHLibrary.prototype.setInteractivePushBtnPair = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'setInteractivePushBtnPair',[]);
+}
 
 // Growth plugin
 
@@ -139,12 +175,24 @@ SHLibrary.prototype.originateShareWithSourceSelection = function(string_ID,strin
 }
 
 // Beacon plugin
-               
+ 
 SHLibrary.prototype.shEnterBeacon = function(string_uuid, int_majorNo, int_minorNo, double_distance, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shEnterBeacon', [string_uuid,int_majorNo,int_minorNo,double_distance]);
 }
 SHLibrary.prototype.shExitBeacon = function(string_uuid, int_majorNo, int_minorNo, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shExitBeacon', [string_uuid,int_majorNo,int_minorNo]);
+}
+/*Added in 1.8.0*/
+SHLibrary.prototype.setNotifyBeaconDetectCallback = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'setNotifyBeaconDetectCallback', []);
+}
+
+SHLibrary.prototype.startBeaconMonitoring = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'startBeaconMonitoring',[]);
+}
+
+SHLibrary.prototype.stopBeaconMonitoring = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'stopBeaconMonitoring',[]);
 }
 
 // Feed plugin
@@ -193,6 +241,10 @@ SHLibrary.prototype.stopGeofenceMonitoring = function(appSuccess, appFail) {
 }
 SHLibrary.prototype.StartGeofenceWithPermissionDialog = function(string_msg,appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shStartGeofenceWithPermissionDialog',[string_msg]);
+}
+//Added in 1.8.0
+SHLibrary.prototype.setNotifyGeofenceEventCallback = function(appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'setNotifyGeofenceEventCallback', []);
 }
 
 // iOS specific
