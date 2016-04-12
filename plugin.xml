@@ -116,9 +116,7 @@
         <header-file src="src/ios/SDK/Core/Internal/SHInstallHandler.h" />
         <source-file src="src/ios/SDK/Core/Internal/SHInstallHandler.m" />
         <header-file src="src/ios/SDK/Core/Internal/SHLogger.h" />
-        <source-file src="src/ios/SDK/Core/Internal/SHLogger.m" />
-        <header-file src="src/ios/SDK/Core/Internal/SHRequest.h" />
-        <source-file src="src/ios/SDK/Core/Internal/SHRequest.m" />
+        <source-file src="src/ios/SDK/Core/Internal/SHLogger.m" />        
         <header-file src="src/ios/SDK/Core/Internal/SHUtils.h" />
         <source-file src="src/ios/SDK/Core/Internal/SHUtils.m" />
         <header-file src="src/ios/SDK/Core/Internal/SHViewController.h" />
@@ -137,6 +135,8 @@
         <source-file src="src/ios/SDK/Core/Private/SHFeedbackQueue.m" />
         <header-file src="src/ios/SDK/Core/Private/SHFeedbackViewController.h" />
         <source-file src="src/ios/SDK/Core/Private/SHFeedbackViewController.m" />
+        <header-file src="src/ios/SDK/Core/Private/SHHTTPSessionManager.h" />
+        <source-file src="src/ios/SDK/Core/Private/SHHTTPSessionManager.m" />
         <header-file src="src/ios/SDK/Core/Private/SHInterceptor.h" />
         <source-file src="src/ios/SDK/Core/Private/SHInterceptor.m" />
         <header-file src="src/ios/SDK/Core/Private/SHPresentDialog.h" />
@@ -155,6 +155,19 @@
         <source-file src="src/ios/SDK/Core/Publish/SHObject.m" />
         <header-file src="src/ios/SDK/Core/Publish/SHTypes.h" />
         <header-file src="src/ios/SDK/Core/Publish/StreetHawkCore.h" />
+        <header-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFHTTPSessionManager.h" />
+        <source-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFHTTPSessionManager.m" />
+        <header-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFNetworking.h" />
+        <header-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFNetworkReachabilityManager.h" />
+        <source-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFNetworkReachabilityManager.m" />
+        <header-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFSecurityPolicy.h" />
+        <source-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFSecurityPolicy.m" />
+        <header-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFURLRequestSerialization.h" />
+        <source-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFURLRequestSerialization.m" />
+        <header-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFURLResponseSerialization.h" />
+        <source-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFURLResponseSerialization.m" />
+        <header-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFURLSessionManager.h" />
+        <source-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFURLSessionManager.m" />
         <header-file src="src/ios/SDK/ThirdParty/MBProgressHUD/SHMBProgressHUD.h" />
         <source-file src="src/ios/SDK/ThirdParty/MBProgressHUD/SHMBProgressHUD.m" />
         <header-file src="src/ios/SDK/ThirdParty/UIDevice_Extension/SHUIDevice-Hardware.h" />
@@ -175,6 +188,7 @@
         <framework src="CoreLocation.framework" />
         <framework src="CoreBluetooth.framework" />
         <framework src="SystemConfiguration.framework" />
+        <framework src="CoreSpotlight.framework" />
 				
 		<!-- Add resource bundle -->
 		<resource-file src="src/ios/SDK/Resource/StreetHawkCoreRes.bundle" />
