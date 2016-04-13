@@ -63,11 +63,9 @@ SHLibrary.prototype.incrementTag = function(string_key, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'incrementTag', [string_key]);
 }
 //Added in 1.8.0
-SHLibrary.prototype.incrementTag = function(string_key,int_value, appSuccess, appFail) {
-    exec(appSuccess, appFail, 'Streethawk', 'incrementTag', [string_key,int_value]);
+SHLibrary.prototype.incrementTagWithValue = function(string_key, int_value, appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'incrementTag', [string_key, int_value]);
 }
-
-
 SHLibrary.prototype.removeTag = function(string_key, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'removeTag', [string_key]);
 }

@@ -177,9 +177,23 @@
             pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameter [0] expects string."];
         }
     }
+    else if (command.arguments.count == 2)
+    {
+        if ([command.arguments[0] isKindOfClass:[NSString class]] && [command.arguments[1] respondsToSelector:@selector(intValue)])
+        {
+            NSString *key = command.arguments[0];
+            int value = [command.arguments[1] intValue];
+            BOOL ret = [StreetHawk incrementTag:value forKey:key];
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:ret];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameter [0] expects string and [1] expects int."];
+        }
+    }
     else
     {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 1."];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 1 or 2."];
     }
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
