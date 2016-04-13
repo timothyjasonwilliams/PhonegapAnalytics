@@ -105,7 +105,7 @@ SHLibrary.prototype.tagUserLanguage = function(string_userlang, appSuccess, appF
 SHLibrary.prototype.registerInstallEventCallback = function(appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'registerInstallEventCallback', []);
 }
-SHLibrary.prototype.getFormattedDateTime = function(long_time,appSuccess, appFail) {
+SHLibrary.prototype.getFormattedDateTime = function(long_time, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'getFormattedDateTime', [long_time]);
 }
 

@@ -22,7 +22,9 @@
 
 @interface Streethawk ()
 
-@property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForRegisterView;  //remember command to be used for callback
+//remember command to be used for callback
+@property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForRegisterInstall;
+@property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForRegisterView;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForRawJson;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForPushData;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForPushResult;
@@ -31,6 +33,8 @@
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForFetchFeeds;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForShareUrl;
 @property (nonatomic, strong) NSMutableDictionary *dictPushMsgHandler; //remember msg and click handler, to continue between `- (BOOL)onReceive:(PushDataForApplication *)pushData clickButton:(ClickButtonHandler)handler` and `sendPushResult`.
+
+- (void)installRegistrationSuccessHandler:(NSNotification *)notification;
 
 @end
 
@@ -41,6 +45,7 @@
 - (void)streethawkinit:(CDVInvokedUrlCommand *)command
 {
     CDVPluginResult *pluginResult = nil;
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(installRegistrationSuccessHandler:) name:SHInstallRegistrationSuccessNotification object:nil];
     [StreetHawk registerInstallForApp:nil/*read from Info.plist APP_KEY*/ withDebugMode:StreetHawk.isDebugMode];
 #ifdef SH_FEATURE_NOTIFICATION
     [StreetHawk shPGHtmlReceiver:self]; //register as html page load observer.
@@ -60,6 +65,29 @@
         {
             NSString *unique_id = command.arguments[0];
             BOOL ret = [StreetHawk tagCuid:unique_id];
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:ret];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameter [0] expects string."];
+        }
+    }
+    else
+    {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 1."];
+    }
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)tagUserLanguage:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = nil;
+    if (command.arguments.count == 1)
+    {
+        if ([command.arguments[0] isKindOfClass:[NSString class]])
+        {
+            NSString *userlang = command.arguments[0];
+            BOOL ret = [StreetHawk tagUserLanguage:userlang];
             pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:ret];
         }
         else
@@ -221,6 +249,29 @@
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+- (void)getFormattedDateTime:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = nil;
+    if (command.arguments.count == 1)
+    {
+        if ([command.arguments[0] respondsToSelector:@selector(intValue)])
+        {
+            int miliseconds = [command.arguments[0] intValue];
+            NSString *ret = shFormatStreetHawkDate([NSDate dateWithTimeIntervalSince1970:miliseconds/1000]);
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ret];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameter [0] expects int."];
+        }
+    }
+    else
+    {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 1."];
+    }
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
 - (void)notifyViewEnter:(CDVInvokedUrlCommand *)command
 {
     CDVPluginResult *pluginResult = nil;
@@ -298,6 +349,11 @@
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 2."];
     }
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)registerInstallEventCallback:(CDVInvokedUrlCommand *)command
+{
+    self.callbackCommandForRegisterInstall = command; //remember this command to be used install register successfully.
 }
 
 - (void)shGetViewName:(CDVInvokedUrlCommand *)command
@@ -1112,5 +1168,18 @@
 }
 
 #endif
+
+#pragma mark - private functions
+
+- (void)installRegistrationSuccessHandler:(NSNotification *)notification
+{
+    if (self.callbackCommandForRegisterInstall != nil)
+    {
+        SHInstall *currentInstall = notification.userInfo[SHInstallNotification_kInstall];
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:currentInstall.suid];
+        [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForRegisterInstall.callbackId];
+    }
+}
 
 @end

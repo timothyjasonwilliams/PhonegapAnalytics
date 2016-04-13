@@ -43,6 +43,11 @@
 - (void)tagCuid:(CDVInvokedUrlCommand *)command;
 
 /**
+ * Tag language for a sh_language. Command argument is [string_userlang];
+ */
+- (void)tagUserLanguage:(CDVInvokedUrlCommand *)command;
+
+/**
  * Tag numeric for a key. Command argument is [key_string, number_value];
  */
 - (void)tagNumeric:(CDVInvokedUrlCommand *)command;
@@ -68,6 +73,11 @@
 - (void)removeTag:(CDVInvokedUrlCommand *)command;
 
 /**
+ * Get StreetHawk formatted date time string, such as `2016-10-21 16:23:18`. Command argument is miliseconds since 1970 (miliseconds_int).
+ */
+- (void)getFormattedDateTime:(CDVInvokedUrlCommand *)command;
+
+/**
  * Send log to trace current page is entered. Command argument is [pageName_string].
  */
 - (void)notifyViewEnter:(CDVInvokedUrlCommand *)command;
@@ -81,6 +91,11 @@
  * Send feedback with only title and message to StreetHawk server. Command argument is [title_string, message_string].
  */
 - (void)shSendSimpleFeedback:(CDVInvokedUrlCommand *)command;
+
+/**
+ * Callback for install register successfully. Callback get a string for `installid`.
+ */
+- (void)registerInstallEventCallback:(CDVInvokedUrlCommand *)command;
 
 /**
  * Get stored view name for launching page notification, this is used for App launches and check whether a 8004 push notification occured. If this App is waken up by 8004 push notification, the view name is stored locally and read by this function, so that App knows a specific page should be loaded.
