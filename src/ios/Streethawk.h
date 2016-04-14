@@ -200,6 +200,16 @@
  */
 - (void)shUpdateLocationMonitoringParams:(CDVInvokedUrlCommand *)command;
 
+/**
+ * Callback sent when enter or exit a server monitoring beacon. The beacons are configured in web console. Callback get a NSDictionary representing one server monitor beacon.
+ */
+- (void)setNotifyBeaconDetectCallback:(CDVInvokedUrlCommand *)command;
+
+/**
+ * Callback sent when enter or exit a server monitoring geofence. The geofences are configured in web console. Callback get a NSDictionary representing one server monitor geofence.
+ */
+- (void)setNotifyGeofenceEventCallback:(CDVInvokedUrlCommand *)command;
+
 //////////////////  Properties  ///////////////////////////////////
 
 /**
@@ -303,6 +313,16 @@
  * Android function, ignored in ios, not need this.
  */
 - (void)setUseCustomDialog:(CDVInvokedUrlCommand *)command;
+
+/**
+ * Nothing to do in iOS part. ios doesn't support third party beacon library.
+ */
+- (void)startBeaconMonitoring:(CDVInvokedUrlCommand *)command;
+
+/**
+ * Nothing to do in iOS part. ios doesn't support third party beacon library.
+ */
+- (void)stopBeaconMonitoring:(CDVInvokedUrlCommand *)command;
 
 /**
  * Nothing to do in iOS part. ios doesn't support third party beacon library.

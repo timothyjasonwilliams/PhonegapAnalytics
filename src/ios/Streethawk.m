@@ -33,11 +33,15 @@
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForNewFeeds;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForFetchFeeds;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForShareUrl;
+@property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForBeaconEnterExit;
+@property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForGeofenceEnterExit;
 @property (nonatomic, strong) NSMutableDictionary *dictPushMsgHandler; //remember msg and click handler, to continue between `- (BOOL)onReceive:(PushDataForApplication *)pushData clickButton:(ClickButtonHandler)handler` and `sendPushResult`.
 @property (nonatomic, strong) NSMutableArray *arrayInteractiveButtonPairs; //memory button pairs for submission.
 
 - (void)installRegistrationSuccessHandler:(NSNotification *)notification;
 - (void)noneStreetHawkPayloadHandler:(NSNotification *)notification;
+- (void)beaconEnterExitHandler:(NSNotification *)notification;
+- (void)geofenceEnterExitHandler:(NSNotification *)notification;
 
 @end
 
@@ -51,6 +55,12 @@
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(installRegistrationSuccessHandler:) name:SHInstallRegistrationSuccessNotification object:nil];
 #ifdef SH_FEATURE_NOTIFICATION
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(noneStreetHawkPayloadHandler:) name:SHNMOtherPayloadNotification object:nil];
+#endif
+#ifdef SH_FEATURE_IBEACON
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(beaconEnterExitHandler:) name:SHLMEnterExitBeaconNotification object:nil];
+#endif
+#ifdef SH_FEATURE_GEOFENCE
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(geofenceEnterExitHandler:) name:SHLMEnterExitGeofenceNotification object:nil];
 #endif
     [StreetHawk registerInstallForApp:nil/*read from Info.plist APP_KEY*/ withDebugMode:StreetHawk.isDebugMode];
 #ifdef SH_FEATURE_NOTIFICATION
@@ -801,6 +811,16 @@
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+- (void)setNotifyBeaconDetectCallback:(CDVInvokedUrlCommand *)command
+{
+    self.callbackCommandForBeaconEnterExit = command;
+}
+
+- (void)setNotifyGeofenceEventCallback:(CDVInvokedUrlCommand *)command
+{
+    self.callbackCommandForGeofenceEnterExit = command;
+}
+
 #pragma mark - properties
 
 - (void)setAppKey:(CDVInvokedUrlCommand *)command
@@ -1120,6 +1140,18 @@
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+- (void)startBeaconMonitoring:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)stopBeaconMonitoring:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
 - (void)shEnterBeacon:(CDVInvokedUrlCommand *)command
 {
     CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
@@ -1295,6 +1327,30 @@
         CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:payload];
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForNoneStreetHawkPayload.callbackId];
+    }
+#endif
+}
+
+- (void)beaconEnterExitHandler:(NSNotification *)notification
+{
+#ifdef SH_FEATURE_IBEACON
+    if (self.callbackCommandForBeaconEnterExit != nil)
+    {
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:notification.userInfo];
+        [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForBeaconEnterExit.callbackId];
+    }
+#endif
+}
+
+- (void)geofenceEnterExitHandler:(NSNotification *)notification
+{
+#ifdef SH_FEATURE_GEOFENCE
+    if (self.callbackCommandForGeofenceEnterExit != nil)
+    {
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:notification.userInfo];
+        [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForGeofenceEnterExit.callbackId];
     }
 #endif
 }
