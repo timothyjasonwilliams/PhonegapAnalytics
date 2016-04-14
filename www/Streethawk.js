@@ -151,7 +151,7 @@ SHLibrary.prototype.getIcon = function(string_iconname,appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'getIcon', [string_iconname]);
 }
 SHLibrary.prototype.addInteractivePushButtonPairWithIcons = function(string_b1,string_I1,string_b2,string_I2,string_pairname,appSuccess, appFail) {
-    exec(appSuccess, appFail, 'Streethawk', 'addInteractivePushButtonPair2', [string_b1,string_I1,string_b2,string_I2,string_pairname]);
+    exec(appSuccess, appFail, 'Streethawk', 'addInteractivePushButtonPairWithIcons', [string_b1,string_I1,string_b2,string_I2,string_pairname]);
 }
 SHLibrary.prototype.addInteractivePushButtonPair = function(string_b1,string_b2,string_pairname,appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'addInteractivePushButtonPair', [string_b1,string_b2,string_pairname]);

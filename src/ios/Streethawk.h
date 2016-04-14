@@ -141,6 +141,21 @@
 - (void)registerNonSHPushPayloadObserver:(CDVInvokedUrlCommand *)command;
 
 /**
+ * Add a pair to memory, must call `setInteractivePushBtnPair` to submit to server. Command argument is [string_b1, string_I1, string_b2, string_I2, string_pairname].
+ */
+- (void)addInteractivePushButtonPairWithIcons:(CDVInvokedUrlCommand *)command;
+
+/**
+ * Add a pair to memory, must call `setInteractivePushBtnPair` to submit to server. Command argument is [string_b1, string_b2, string_pairname].
+ */
+- (void)addInteractivePushButtonPair:(CDVInvokedUrlCommand *)command;
+
+/**
+ * Submit all memory pairs to server and register categories. Command argument is empty.
+ */
+- (void)setInteractivePushBtnPair:(CDVInvokedUrlCommand *)command;
+
+/**
  * Callback when new feed arrives. Callback get empty.
  */
 - (void)notifyNewFeedCallback:(CDVInvokedUrlCommand *)command;

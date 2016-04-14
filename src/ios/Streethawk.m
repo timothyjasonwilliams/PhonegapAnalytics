@@ -34,6 +34,7 @@
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForFetchFeeds;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForShareUrl;
 @property (nonatomic, strong) NSMutableDictionary *dictPushMsgHandler; //remember msg and click handler, to continue between `- (BOOL)onReceive:(PushDataForApplication *)pushData clickButton:(ClickButtonHandler)handler` and `sendPushResult`.
+@property (nonatomic, strong) NSMutableArray *arrayInteractiveButtonPairs; //memory button pairs for submission.
 
 - (void)installRegistrationSuccessHandler:(NSNotification *)notification;
 - (void)noneStreetHawkPayloadHandler:(NSNotification *)notification;
@@ -48,13 +49,16 @@
 {
     CDVPluginResult *pluginResult = nil;
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(installRegistrationSuccessHandler:) name:SHInstallRegistrationSuccessNotification object:nil];
+#ifdef SH_FEATURE_NOTIFICATION
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(noneStreetHawkPayloadHandler:) name:SHNMOtherPayloadNotification object:nil];
+#endif
     [StreetHawk registerInstallForApp:nil/*read from Info.plist APP_KEY*/ withDebugMode:StreetHawk.isDebugMode];
 #ifdef SH_FEATURE_NOTIFICATION
     [StreetHawk shPGHtmlReceiver:self]; //register as html page load observer.
     [StreetHawk shSetCustomiseHandler:self]; //register as customise handler.
 #endif
     self.dictPushMsgHandler = [NSMutableDictionary dictionary];
+    self.arrayInteractiveButtonPairs = [NSMutableArray array];
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
@@ -456,6 +460,92 @@
 - (void)registerNonSHPushPayloadObserver:(CDVInvokedUrlCommand *)command
 {
     self.callbackCommandForNoneStreetHawkPayload = command;
+}
+
+- (void)addInteractivePushButtonPairWithIcons:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = nil;
+#ifdef SH_FEATURE_NOTIFICATION
+    if (command.arguments.count == 5)
+    {
+        if ([command.arguments[0] isKindOfClass:[NSString class]] //1 and 3 are icon, not used in iOS
+            && [command.arguments[2] isKindOfClass:[NSString class]]
+            && [command.arguments[4] isKindOfClass:[NSString class]])
+        {
+            NSString *b1 = command.arguments[0];
+            NSString *b2 = command.arguments[2];
+            NSString *pairname = command.arguments[4];
+            InteractivePush *pair = [[InteractivePush alloc] initWithPairTitle:pairname withButton1:b1 withButton2:b2];
+            [self.arrayInteractiveButtonPairs addObject:pair];
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameters expect [string_b1, string_I1, string_b2, string_I2, string_pairname]."];
+        }
+    }
+    else
+    {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 5."];
+    }
+#else
+    NSString *missPluginMsg = @"\"addInteractivePushButtonPairWithIcons\" fail. Please add com.streethawk.push plugin.";
+    NSLog(@"%@", missPluginMsg);
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:missPluginMsg];
+#endif
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)addInteractivePushButtonPair:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = nil;
+#ifdef SH_FEATURE_NOTIFICATION
+    if (command.arguments.count == 3)
+    {
+        if ([command.arguments[0] isKindOfClass:[NSString class]]
+            && [command.arguments[1] isKindOfClass:[NSString class]]
+            && [command.arguments[2] isKindOfClass:[NSString class]])
+        {
+            NSString *b1 = command.arguments[0];
+            NSString *b2 = command.arguments[1];
+            NSString *pairname = command.arguments[2];
+            InteractivePush *pair = [[InteractivePush alloc] initWithPairTitle:pairname withButton1:b1 withButton2:b2];
+            [self.arrayInteractiveButtonPairs addObject:pair];
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameters expect [string_b1, string_b2, string_pairname]."];
+        }
+    }
+    else
+    {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 3."];
+    }
+#else
+    NSString *missPluginMsg = @"\"addInteractivePushButtonPair\" fail. Please add com.streethawk.push plugin.";
+    NSLog(@"%@", missPluginMsg);
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:missPluginMsg];
+#endif
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)setInteractivePushBtnPair:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = nil;
+#ifdef SH_FEATURE_NOTIFICATION
+    if (self.arrayInteractiveButtonPairs.count > 0)
+    {
+        [StreetHawk setInteractivePushBtnPairs:self.arrayInteractiveButtonPairs];
+        [self.arrayInteractiveButtonPairs removeAllObjects];
+    }
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+#else
+    NSString *missPluginMsg = @"\"setInteractivePushBtnPair\" fail. Please add com.streethawk.push plugin.";
+    NSLog(@"%@", missPluginMsg);
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:missPluginMsg];
+#endif
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 - (void)notifyNewFeedCallback:(CDVInvokedUrlCommand *)command
@@ -1198,6 +1288,7 @@
 
 - (void)noneStreetHawkPayloadHandler:(NSNotification *)notification
 {
+#ifdef SH_FEATURE_NOTIFICATION
     if (self.callbackCommandForNoneStreetHawkPayload != nil)
     {
         NSDictionary *payload = notification.userInfo[SHNMNotification_kPayload];
@@ -1205,6 +1296,7 @@
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForNoneStreetHawkPayload.callbackId];
     }
+#endif
 }
 
 @end
