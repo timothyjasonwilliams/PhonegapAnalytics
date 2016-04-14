@@ -216,8 +216,8 @@ SHLibrary.prototype.startLocationReporting = function(appSuccess, appFail) {
 SHLibrary.prototype.stopLocationReporting = function(appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shStopLocationReporting',[]);
 }
-SHLibrary.prototype.reportWorkHomeLocationOnly = function(appSuccess, appFail) {
-    exec(appSuccess, appFail, 'Streethawk', 'shReportWorkHomeLocationOnly',[]);
+SHLibrary.prototype.reportWorkHomeLocationOnly = function(bool_flag, appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'shReportWorkHomeLocationOnly',[bool_flag]);
 }
 SHLibrary.prototype.updateLocationMonitoringParams = function(int_interval_FG, int_distance_FG, int_interval_BG, int_distance_BG, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shUpdateLocationMonitoringParams',[int_interval_FG,int_distance_FG,int_interval_BG,int_distance_BG]);

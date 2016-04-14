@@ -623,8 +623,30 @@
 
 - (void)shReportFeedAck:(CDVInvokedUrlCommand *)command
 {
-    //TODO
-    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    CDVPluginResult *pluginResult = nil;
+#ifdef SH_FEATURE_FEED
+    if (command.arguments.count == 1)
+    {
+        if ([command.arguments[0] isKindOfClass:[NSNumber class]])
+        {
+            NSInteger feedId = [command.arguments[0] integerValue];
+            [StreetHawk sendFeedAck:feedId];
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameters expect [int_feedId]."];
+        }
+    }
+    else
+    {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 1."];
+    }
+#else
+    NSString *missPluginMsg = @"\"shReportFeedAck\" fail. Please add com.streethawk.feed plugin.";
+    NSLog(@"%@", missPluginMsg);
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:missPluginMsg];
+#endif
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
@@ -799,15 +821,65 @@
 
 - (void)shReportWorkHomeLocationOnly:(CDVInvokedUrlCommand *)command
 {
-    //TODO
-    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    CDVPluginResult *pluginResult = nil;
+#ifdef SH_FEATURE_LATLNG
+    if (command.arguments.count == 1)
+    {
+        if ([command.arguments[0] isKindOfClass:[NSNumber class]] && [command.arguments[0] respondsToSelector:@selector(boolValue)])
+        {
+            BOOL isWorkHomeLocationOnly = [command.arguments[0] boolValue];
+            StreetHawk.reportWorkHomeLocationOnly = isWorkHomeLocationOnly;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameter [0] expects bool."];
+        }
+    }
+    else
+    {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 1."];
+    }
+#else
+    NSString *missPluginMsg = @"\"shReportWorkHomeLocationOnly\" fail. Please add com.streethawk.locations plugin.";
+    NSLog(@"%@", missPluginMsg);
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:missPluginMsg];
+#endif
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 - (void)shUpdateLocationMonitoringParams:(CDVInvokedUrlCommand *)command
 {
-    //TODO
-    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    CDVPluginResult *pluginResult = nil;
+#ifdef SH_FEATURE_LATLNG
+    if (command.arguments.count == 4)
+    {
+        if ([command.arguments[0] isKindOfClass:[NSNumber class]]
+            && [command.arguments[1] isKindOfClass:[NSNumber class]]
+            && [command.arguments[2] isKindOfClass:[NSNumber class]]
+            && [command.arguments[3] isKindOfClass:[NSNumber class]])
+        {
+            int interval_FG = [command.arguments[0] intValue];
+            int distance_FG = [command.arguments[1] intValue];
+            int interval_BG = [command.arguments[2] intValue];
+            int distance_BG = [command.arguments[3] intValue];
+            [StreetHawk setLocationUpdateFrequencyForFGInterval:interval_FG forFGDistance:distance_FG forBGInterval:interval_BG forBGDistance:distance_BG];
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameter expects [interval_FG_int, distance_FG_int, interval_BG_int, distance_BG_int]."];
+        }
+    }
+    else
+    {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 4."];
+    }
+#else
+    NSString *missPluginMsg = @"\"shUpdateLocationMonitoringParams\" fail. Please add com.streethawk.locations plugin.";
+    NSLog(@"%@", missPluginMsg);
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:missPluginMsg];
+#endif
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
