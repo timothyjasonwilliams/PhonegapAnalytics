@@ -29,12 +29,14 @@
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForPushData;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForPushResult;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForOpenUrl;
+@property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForNoneStreetHawkPayload;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForNewFeeds;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForFetchFeeds;
 @property (nonatomic, strong) CDVInvokedUrlCommand *callbackCommandForShareUrl;
 @property (nonatomic, strong) NSMutableDictionary *dictPushMsgHandler; //remember msg and click handler, to continue between `- (BOOL)onReceive:(PushDataForApplication *)pushData clickButton:(ClickButtonHandler)handler` and `sendPushResult`.
 
 - (void)installRegistrationSuccessHandler:(NSNotification *)notification;
+- (void)noneStreetHawkPayloadHandler:(NSNotification *)notification;
 
 @end
 
@@ -46,6 +48,7 @@
 {
     CDVPluginResult *pluginResult = nil;
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(installRegistrationSuccessHandler:) name:SHInstallRegistrationSuccessNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(noneStreetHawkPayloadHandler:) name:SHNMOtherPayloadNotification object:nil];
     [StreetHawk registerInstallForApp:nil/*read from Info.plist APP_KEY*/ withDebugMode:StreetHawk.isDebugMode];
 #ifdef SH_FEATURE_NOTIFICATION
     [StreetHawk shPGHtmlReceiver:self]; //register as html page load observer.
@@ -448,6 +451,11 @@
             [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForOpenUrl.callbackId];
         }
     };
+}
+
+- (void)registerNonSHPushPayloadObserver:(CDVInvokedUrlCommand *)command
+{
+    self.callbackCommandForNoneStreetHawkPayload = command;
 }
 
 - (void)notifyNewFeedCallback:(CDVInvokedUrlCommand *)command
@@ -1046,6 +1054,12 @@
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+- (void)getIcon:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
 - (void)shStartLocationReporting:(CDVInvokedUrlCommand *)command
 {
     CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
@@ -1179,6 +1193,17 @@
         CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:currentInstall.suid];
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForRegisterInstall.callbackId];
+    }
+}
+
+- (void)noneStreetHawkPayloadHandler:(NSNotification *)notification
+{
+    if (self.callbackCommandForNoneStreetHawkPayload != nil)
+    {
+        NSDictionary *payload = notification.userInfo[SHNMNotification_kPayload];
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:payload];
+        [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForNoneStreetHawkPayload.callbackId];
     }
 }
 

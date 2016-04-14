@@ -136,6 +136,11 @@
 - (void)shDeeplinking:(CDVInvokedUrlCommand *)command;
 
 /**
+ * Callback for handling none StreetHawk payload. Callback get a dictionary of payload.
+ */
+- (void)registerNonSHPushPayloadObserver:(CDVInvokedUrlCommand *)command;
+
+/**
  * Callback when new feed arrives. Callback get empty.
  */
 - (void)notifyNewFeedCallback:(CDVInvokedUrlCommand *)command;
@@ -303,6 +308,11 @@
  * Android function, ignored in ios.
  */
 - (void)forcePushToNotificationBar:(CDVInvokedUrlCommand *)command;
+
+/**
+ * Android function, ignored in ios.
+ */
+- (void)getIcon:(CDVInvokedUrlCommand *)command;
 
 /**
  * Android permission function, ignored in ios.

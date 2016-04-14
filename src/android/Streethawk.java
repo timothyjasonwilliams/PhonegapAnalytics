@@ -145,10 +145,6 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
         if(action.equals("getIcon")){
 			return getIcon(args,callbackContext);
 		}
-        if(action.equals("getButtonPairFromId")){
-			Log.i(TAG,SUBTAG+" getButtonPairFromId doenst do anythig in..");
-            return true;
-		}
         if(action.equals("addInteractivePushButtonPair")){
 			return addInteractivePushButtonPair(args);
 		}
