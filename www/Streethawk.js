@@ -234,7 +234,7 @@ SHLibrary.prototype.startGeofenceMonitoring = function(appSuccess, appFail) {
 SHLibrary.prototype.stopGeofenceMonitoring = function(appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shStopGeofenceMonitoring',[]);
 }
-SHLibrary.prototype.StartGeofenceWithPermissionDialog = function(string_msg,appSuccess, appFail) {
+SHLibrary.prototype.startGeofenceWithPermissionDialog = function(string_msg, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shStartGeofenceWithPermissionDialog',[string_msg]);
 }
 //Added in 1.8.0
