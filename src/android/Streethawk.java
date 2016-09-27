@@ -22,16 +22,15 @@ import android.app.Activity;
 
 public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 
-	private final String TAG = "StreetHawk";
-	private final String SUBTAG = "Core-Plugin ";
-	private final int PERMISSIONS_LOCATION = 0;
-	private final int PERMISSIONS_GEOFENCE = 1;
-	private String mSenderID = null;
-    private static JSONObject mPartnerModuleMessage = null;
-    private final String INSTALLID = "installid";
-    
-    private static CallbackContext mEventObserverCallback;
-	
+	private final 	String TAG = "StreetHawk";
+	private final 	String SUBTAG = "Core-Plugin ";
+	private final 	int PERMISSIONS_LOCATION = 0;
+	private final 	int PERMISSIONS_GEOFENCE = 1;
+	private 		String mSenderID = null;
+    private static 	JSONObject mPartnerModuleMessage = null;
+    private final 	String INSTALLID = "installid";
+	private final 	String FEED_DATA = "feed_data";
+    private static 	CallbackContext mEventObserverCallback;
 	@Override
 	public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
 		if(action.equals("streethawkinit")) {            	
@@ -106,7 +105,9 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 		/*PUSH Plugin*/
 		if(action.equals("shSetGcmSenderId")){
 			mSenderID = args.getString(0);
+			Log.e("Anurag","SenderID "+mSenderID+args.getString(0));
             registerISHObserver();
+			return;
 		}
 		if(action.equals("registerPushDataCallback")){
 			return pushDataCallback(callbackContext);
@@ -264,10 +265,6 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 		return false;
 	}
 
-   
-
-
-
 	private boolean setAppKey(JSONArray args)throws JSONException{
 		String appKey = args.getString(0);	
 		StreetHawk.INSTANCE.setAppKey(appKey);
@@ -370,8 +367,7 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 		return true;
 	}
     
-    
-	private boolean removeTag(JSONArray args)throws JSONException{
+    private boolean removeTag(JSONArray args)throws JSONException{
 		String tag 	 = args.getString(0);
 		StreetHawk.INSTANCE.removeTag(tag);
 		return true;
@@ -567,6 +563,7 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 		}
 		return true;
 	}
+	
 	private boolean shGetAlertSettings(CallbackContext callbackContext){
 		final Context context = cordova.getActivity().getApplicationContext();
 		Class noParams[] = {};
@@ -946,10 +943,7 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 		}).start();
 		return true;
 	}
-    
-    
-    
-
+	
 	/**
 	 * Notify page callback
 	 */
@@ -1160,7 +1154,6 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 	}
 
 	/*Beacon API*/
-
 	private boolean shEnterBeacon(JSONArray args)throws JSONException{
 		final Context context = cordova.getActivity().getApplicationContext();
 		String UUID 	 = args.getString(0);
@@ -1331,33 +1324,8 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 	}
 
 	private boolean registerFeedItemCallBack(CallbackContext callbackContext){	
-		final Context context = cordova.getActivity().getApplicationContext();
-		Class[] params = new Class[2];
-		params[0] = Context.class;
-		params[1] = CallbackContext.class;
-		Class noParams[] = {};
-		try {
-			Class feedWrapper = Class.forName("com.streethawk.feeds.FeedWrapper");
-			Method wrapperMethod = feedWrapper.getMethod("getInstance",noParams);
-			Object objWrapper = wrapperMethod.invoke(null);
-			if(null!=objWrapper){
-				Method method = feedWrapper.getDeclaredMethod("registerFeed",params);
-				method.invoke(objWrapper,context,callbackContext);
-			}
-		} catch (ClassNotFoundException e1) {
-			Log.w(TAG,SUBTAG+"Feed module is not  not present");
-			return false;
-		} catch (IllegalAccessException e1) {
-			e1.printStackTrace();
-			return false;
-		} catch (NoSuchMethodException e1) {
-			e1.printStackTrace();
-			return false;
-		} catch (InvocationTargetException e1) {
-			e1.printStackTrace();
-			return false;
-		}
-		return true;
+		Context context = cordova.getActivity().getApplicationContext();
+        return true;
 	}
 
 	private boolean shReportFeedRead(JSONArray args)throws JSONException{
@@ -1459,7 +1427,6 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 	}
 
 	/* Location API */
-
 	private boolean shStartLocationWithPermissionDialog(JSONArray args)throws JSONException{
 		String msg 	 = args.getString(0);
 		Context context = cordova.getActivity().getApplicationContext();   
@@ -1784,5 +1751,5 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 			return false;
 		}
 		return true;
-	}  
+	} 
 }

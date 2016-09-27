@@ -207,6 +207,9 @@ SHLibrary.prototype.reportFeedRead = function(int_feedid, int_result, appSuccess
 SHLibrary.prototype.shGetFeedDataFromServer = function(int_offset, appSuccess, appFail) {
     exec(appSuccess, appFail, 'Streethawk', 'shGetFeedDataFromServer', [int_offset]);
 }
+SHLibrary.prototype.notifyFeedResult = function(int_feedid,string_stepid,string_feedresult,bool_feedDelete,bool_completed,appSuccess, appFail) {
+    exec(appSuccess, appFail, 'Streethawk', 'notifyFeedResult', [int_feedid,string_stepid,string_feedresult,bool_feedDelete,bool_completed]);
+}
 
 // Location plugin
 
