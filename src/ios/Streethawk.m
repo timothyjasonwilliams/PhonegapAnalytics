@@ -410,9 +410,9 @@
 #ifdef SH_FEATURE_NOTIFICATION
     if (command.arguments.count == 2)
     {
-        if ([command.arguments[0] isKindOfClass:[NSNumber class]] && [command.arguments[1] isKindOfClass:[NSNumber class]])
+        if ([command.arguments[0] isKindOfClass:[NSString class]] && [command.arguments[1] isKindOfClass:[NSNumber class]])
         {
-            NSInteger msgId = [command.arguments[0] integerValue];
+            NSString *msgId = command.arguments[0];
             NSInteger pushResult = [command.arguments[1] integerValue];
             if (pushResult < -1 || pushResult > 1)
             {
@@ -420,19 +420,19 @@
             }
             else
             {
-                NSAssert([self.dictPushMsgHandler.allKeys containsObject:@(msgId)], @"Cannot find msgid %ld match.", msgId);
-                if ([self.dictPushMsgHandler.allKeys containsObject:@(msgId)])
+                NSAssert([self.dictPushMsgHandler.allKeys containsObject:msgId], @"Cannot find msgid %@ match.", msgId);
+                if ([self.dictPushMsgHandler.allKeys containsObject:msgId])
                 {
-                    ClickButtonHandler handler = self.dictPushMsgHandler[@(msgId)];
+                    ClickButtonHandler handler = self.dictPushMsgHandler[msgId];
                     handler((SHResult)pushResult);
-                    [self.dictPushMsgHandler removeObjectForKey:@(msgId)];
+                    [self.dictPushMsgHandler removeObjectForKey:msgId];
                 }
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
             }
         }
         else
         {
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameters expect [int_msgid, int_pushresult]."];
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameters expect [string_msgid, int_pushresult]."];
         }
     }
     else
@@ -1337,7 +1337,7 @@
         //insert into memory cache
         if (handler)
         {
-            NSAssert(![self.dictPushMsgHandler.allKeys containsObject:pushData.msgID], @"msg id %ld is inside cache.", pushData.msgID);
+            NSAssert(![self.dictPushMsgHandler.allKeys containsObject:pushData.msgID], @"msg id %@ is inside cache.", pushData.msgID);
             if (![self.dictPushMsgHandler.allKeys containsObject:pushData.msgID])
             {
                 [self.dictPushMsgHandler setObject:handler forKey:pushData.msgID];
