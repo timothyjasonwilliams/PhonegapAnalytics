@@ -17,8 +17,7 @@
  */
 
 #import "Streethawk.h"
-
-#import "SHUtils.h" //for shFormatStreetHawkDate
+#import "SHUtils.h" //for shParseDate and shStrIsEmpty
 
 @interface Streethawk ()
 
@@ -274,7 +273,7 @@
         if ([command.arguments[0] respondsToSelector:@selector(intValue)])
         {
             int miliseconds = [command.arguments[0] intValue];
-            NSString *ret = shFormatStreetHawkDate([NSDate dateWithTimeIntervalSince1970:miliseconds/1000]);
+            NSString *ret = [StreetHawk getFormattedDateTime:miliseconds/1000];
             pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ret];
         }
         else
@@ -960,7 +959,7 @@
 
 - (void)getCurrentFormattedDateTime:(CDVInvokedUrlCommand *)command
 {
-    NSString *dateStr = shFormatStreetHawkDate([NSDate date]);
+    NSString *dateStr = [StreetHawk getCurrentFormattedDateTime];
     CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:dateStr];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
@@ -1325,7 +1324,7 @@
     {
         NSMutableDictionary *dict = [NSMutableDictionary dictionary];
         dict[@"action"] = @(pushData.action);
-        dict[@"msgid"] = @(pushData.msgID);
+        dict[@"msgid"] = NONULL(pushData.msgID);
         dict[@"title"] = NONULL(pushData.title);
         dict[@"message"] = NONULL(pushData.message);
         dict[@"data"] = NONULL(pushData.data.description);
@@ -1338,10 +1337,10 @@
         //insert into memory cache
         if (handler)
         {
-            NSAssert(![self.dictPushMsgHandler.allKeys containsObject:@(pushData.msgID)], @"msg id %ld is inside cache.", pushData.msgID);
-            if (![self.dictPushMsgHandler.allKeys containsObject:@(pushData.msgID)])
+            NSAssert(![self.dictPushMsgHandler.allKeys containsObject:pushData.msgID], @"msg id %ld is inside cache.", pushData.msgID);
+            if (![self.dictPushMsgHandler.allKeys containsObject:pushData.msgID])
             {
-                [self.dictPushMsgHandler setObject:handler forKey:@(pushData.msgID)];
+                [self.dictPushMsgHandler setObject:handler forKey:pushData.msgID];
             }
         }
         CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:dict];
@@ -1359,7 +1358,7 @@
         NSMutableDictionary *dict = [NSMutableDictionary dictionary];
         dict[@"result"] = @(result);
         dict[@"action"] = @(pushData.action);
-        dict[@"msgid"] = @(pushData.msgID);
+        dict[@"msgid"] = NONULL(pushData.msgID);
         dict[@"title"] = NONULL(pushData.title);
         dict[@"message"] = NONULL(pushData.message);
         dict[@"data"] = NONULL(pushData.data.description);
