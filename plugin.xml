@@ -2,7 +2,7 @@
 <plugin id="com.streethawk.core" version="1.8.1" xmlns="http://apache.org/cordova/ns/plugins/1.0"
 	xmlns:android="http://schemas.android.com/apk/res/android">
 	<name>StreetHawkCore</name>
-	<description> StreetHawk SDK plugin for analytics</description>	    
+	<description>StreetHawk SDK plugin for analytics</description>
     <license>Apache 2.0</license>
     
     <keywords>push,messaging,deeplinking,referral,analytics,geofencing,beacons,marketing,automation,organic growth</keywords>
@@ -170,8 +170,6 @@
         <source-file src="src/ios/SDK/ThirdParty/AFNetworking/SHAFURLSessionManager.m" />
         <header-file src="src/ios/SDK/ThirdParty/MBProgressHUD/SHMBProgressHUD.h" />
         <source-file src="src/ios/SDK/ThirdParty/MBProgressHUD/SHMBProgressHUD.m" />
-        <header-file src="src/ios/SDK/ThirdParty/UIDevice_Extension/SHUIDevice-Hardware.h" />
-        <source-file src="src/ios/SDK/ThirdParty/UIDevice_Extension/SHUIDevice-Hardware.m" />
         
         <!-- Location source code used in three plugins, add in core to avoid duplication. -->
         <header-file src="src/ios/SDK/Location/Internal/SHLocationManager.h" />
