@@ -39,6 +39,7 @@
 #define EXIT_PAGE_HISTORY                   @"EXIT_PAGE_HISTORY"  //key for record send exit log history. It's set when send exit log and cleared when send enter log. This is to avoid send duplicated exit log.
 
 #define ADS_IDENTIFIER                      @"ADS_IDENTIFIER" //user pass in advertising identifier
+#define ADS_CUSTOMERSET                     @"ADS_CUSTOMERSET" //customer manually set so not do automatically capture
 
 #define SPOTLIGHT_DEEPLINKING_MAPPING      @"SPOTLIGHT_DEEPLINKING_MAPPING" //key for spotlight identifier to deeplinking mappig
 
@@ -108,8 +109,9 @@
 - (void)checkUtcOffsetUpdate;  //Check utc_offset: if not logged before or changed, log it immediately.
 - (void)timeZoneChangeNotificationHandler:(NSNotification *)notification;  //Notification handler called when time zone change
 
-//send module tags
+//send automatic tags
 - (void)sendModuleTags; //Send current build include what modules.
+- (void)autoCaptureAdvertisingIdentifierTags; //Automatically capture advertising identifier as long as customer add <AdSupport.framework>.
 
 //Log enter/exit page.
 @property (nonatomic, strong) SHViewActivity *currentView;
@@ -261,6 +263,8 @@
         return; //ignore second and later call.
     }
     self.isRegisterInstallForAppCalled = YES;
+    //Do it first for SHLog to work.
+    self.isDebugMode = isDebugMode;
     NSString *registerAppKey = appKey; //first try this function pass in.
     if (shStrIsEmpty(registerAppKey)) //second try property StreetHawk.appKey set by code.
     {
@@ -270,7 +274,6 @@
     {
         registerAppKey = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"APP_KEY"];
     }
-    NSAssert(!shStrIsEmpty(registerAppKey), @"Not setup App key for this register.");
     if (!shStrIsEmpty(registerAppKey))
     {
         StreetHawk.appKey = registerAppKey;
@@ -279,9 +282,8 @@
     else
     {
         SHLog(@"Warning: Please setup APP_KEY in Info.plist or pass in by parameter.");
+        return; //without app key not need to continue, but each request still checkes mandatory parameters.
     }
-    //assign pass in parameters
-    self.isDebugMode = isDebugMode;
     //initialize handlers
     self.innerLogger = [[SHLogger alloc] init];  //this creates logs db, wait till user call `registerInstallForApp` to take action. logger must before location manager, because location manager create and start to send log, for example failure, and logger must be ready.
     [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_CreateLocationManager" object:nil];
@@ -312,6 +314,8 @@
     [self checkUtcOffsetUpdate];
     //check current build include which modules and send tags.
     [self sendModuleTags];
+    //capture advertising identifier in case customer enables AdSupport.framework.
+    [self autoCaptureAdvertisingIdentifierTags];
     //setup intercept app delegate
     if (self.autoIntegrateAppDelegate)
     {
@@ -373,7 +377,7 @@
 {
     //Framework version is upgraded by StreetHawkCore-Info.plist and StreetHawkCoreRes-Info.plist, but the version number is not accessible by code. StreetHawkCore-Info.plist is built as binrary in main App, StreetHawkCoreRes-Info.plist may be contained in main App but not guranteed. To make sure this version work, add a method with hard-coded version number.
     //Format: X.Y.Z, make sure X and Y and Z are from >= 0  and < 1000.
-    return @"1.7.8";
+    return @"1.8.5";
 }
 
 - (SHInstall *)currentInstall
@@ -483,7 +487,7 @@
     {
         return;
     }
-    [[SHFeedbackQueue shared] submitFeedbackForTitle:title withType:0/*discussed: this is not used now*/ withContent:content withPushData:nil withShowError:NO withHandler:handler];
+    [[SHFeedbackQueue shared] submitFeedbackForTitle:title withType:0/*discussed: this is not used now*/ withContent:content withPushData:nil withHandler:handler];
 }
 
 - (void)shNotifyPageEnter:(NSString *)page
@@ -534,6 +538,30 @@
     return shFormatStreetHawkDate([NSDate dateWithTimeIntervalSince1970:seconds]);
 }
 
+- (NSString *)getCurrentFormattedDateTime
+{
+    return shFormatStreetHawkDate([NSDate date]);
+}
+
+- (id)getAppDelegate
+{
+    id<UIApplicationDelegate> appDelegate = [UIApplication sharedApplication].delegate;
+    if (![appDelegate isKindOfClass:[SHInterceptor class]])
+    {
+        return appDelegate; //it's not wrappered by SHInterceptor
+    }
+    else
+    {
+        SHInterceptor *interceptor = (SHInterceptor *)appDelegate;
+        if (![interceptor.secondResponder isKindOfClass:[SHInterceptor class]] && ![interceptor.secondResponder isKindOfClass:[SHApp class]])
+        {
+            return interceptor.secondResponder;
+        }
+    }
+    NSAssert(NO, @"Cannot find real App delegate");
+    return nil;
+}
+
 - (void)shRegularTask:(void (^)(UIBackgroundFetchResult))completionHandler needComplete:(BOOL)needComplete
 {
     BOOL needHeartbeatLog = YES;
@@ -571,7 +599,7 @@
         }
         else //send heart beat
         {
-            [StreetHawk sendLogForCode:LOG_CODE_HEARTBEAT withComment:@"Heart beat." forAssocId:0 withResult:100/*ignore*/ withHandler:^(NSObject *result, NSError *error)
+            [StreetHawk sendLogForCode:LOG_CODE_HEARTBEAT withComment:@"Heart beat." forAssocId:nil withResult:100/*ignore*/ withHandler:^(NSObject *result, NSError *error)
              {
                  if (needComplete && completionHandler != nil)
                  {
@@ -603,7 +631,10 @@
     if (!handledBySDK && StreetHawk.openUrlHandler != nil)
     {
         [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_GrowthBridge_Increase_Notification" object:nil userInfo:@{@"url": NONULL(url.absoluteString)}]; //send Growth increase request
-        StreetHawk.openUrlHandler(url);
+        if (!shIsUniversalLinking(url.absoluteString))
+        {
+            StreetHawk.openUrlHandler(url); //if it's not universal linking, means it's real deeplinking url, suitable for returning to customer. Universal linking gets real scheme in growth increase request, and that will return to customer.
+        }
         return YES; //open url is handled by customer code.
     }
     return NO;
@@ -611,11 +642,20 @@
 
 - (void)setAdvertisingIdentifier:(NSString *)advertisingIdentifier
 {
-    NSString *refinedAds = NONULL(advertisingIdentifier);
-    if ([refinedAds compare:StreetHawk.advertisingIdentifier] != NSOrderedSame)
+    if (advertisingIdentifier != nil) //do set
     {
-        [StreetHawk tagString:refinedAds forKey:@"sh_advertising_identifier"];
-        [[NSUserDefaults standardUserDefaults] setObject:refinedAds forKey:ADS_IDENTIFIER];
+        NSString *refinedAds = NONULL(advertisingIdentifier);
+        if ([refinedAds compare:StreetHawk.advertisingIdentifier] != NSOrderedSame)
+        {
+            [StreetHawk tagString:refinedAds forKey:@"sh_advertising_identifier"];
+            [[NSUserDefaults standardUserDefaults] setObject:refinedAds forKey:ADS_IDENTIFIER];
+            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:ADS_CUSTOMERSET];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }
+    }
+    else //do clear
+    {
+        [[NSUserDefaults standardUserDefaults] setBool:NO forKey:ADS_CUSTOMERSET];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
 }
@@ -629,16 +669,9 @@
 
 - (BOOL)launchSystemPreferenceSettings
 {
-    if (&UIApplicationOpenSettingsURLString != NULL)
-    {
-        NSURL *appSettings = [NSURL URLWithString:UIApplicationOpenSettingsURLString];
-        [[UIApplication sharedApplication] openURL:appSettings];
-        return YES;
-    }
-    else
-    {
-        return NO;
-    }
+    NSURL *appSettings = [NSURL URLWithString:UIApplicationOpenSettingsURLString];
+    [[UIApplication sharedApplication] openURL:appSettings];
+    return YES;
 }
 
 #pragma mark - Spotlight and Search
@@ -741,8 +774,7 @@
         if ([userActivity.activityType compare:NSUserActivityTypeBrowsingWeb] == NSOrderedSame)
         {
             NSURL *webURL = userActivity.webpageURL;
-            StreetHawk.openUrlHandler(webURL);
-            return YES; //for universal linking case
+            return [StreetHawk openURL:webURL]; //for universal linking case
         }
         else
         {
@@ -795,7 +827,10 @@
         {
             [StreetHawk openURL:openUrl];
         }
-        //Phonegap handle remote notification happen before StreetHawk library get ready, so remote notification cannot be handled. Check delay launch options, if from remote notification, give it second chance to trigger again.
+    }
+    if (isFromDelayLaunch //Phonegap handle remote notification happen before StreetHawk library get ready, so remote notification cannot be handled. Check delay launch options, if from remote notification, give it second chance to trigger again.
+        || ([[UIDevice currentDevice].systemVersion doubleValue] >= 10.0)) //iOS 10 do [UNUserNotificationCenter currentNotificationCenter].delegate = StreetHawk after AppDidFinishLaunch, causing not launched App cannot handle remote notification. Fix it by handling here.
+    {
         NSDictionary *notificationInfo = launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey];
         if (notificationInfo != nil)
         {
@@ -805,6 +840,7 @@
             dictUserInfo[@"needComplete"] = @(NO);
             [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_PushBridge_ReceiveRemoteNotification" object:nil userInfo:dictUserInfo];
         }
+        //local notification is not considered so far, and StreetHawk SDk doesn't use local notification now.
     }
     
     if (launchOptions[UIApplicationLaunchOptionsLocationKey] != nil)  //happen when significate location service wake up App, the value is a number such as 1
@@ -904,7 +940,7 @@
                 [dictComment setObject:@(lat) forKey:@"lat"];
                 [dictComment setObject:@(lng) forKey:@"lng"];
             }
-            [StreetHawk sendLogForCode:LOG_CODE_APP_INVISIBLE withComment:shSerializeObjToJson(dictComment) forAssocId:0 withResult:100/*ignore*/ withHandler:^(id result, NSError *error)
+            [StreetHawk sendLogForCode:LOG_CODE_APP_INVISIBLE withComment:shSerializeObjToJson(dictComment) forAssocId:nil withResult:100/*ignore*/ withHandler:^(id result, NSError *error)
             {
                 //Once start not cancel the install/log request, there are 10 minutes so make sure it can finish. Call endBackgroundTask after it's done.
                 [self endBackgroundTask:backgroundTask];
@@ -1056,6 +1092,15 @@
     {
         [self.appDelegateInterceptor.secondResponder application:application didRegisterForRemoteNotificationsWithDeviceToken:deviceToken];
     }
+}
+
+- (void)application:(UIApplication *)application didFailToRegisterForRemoteNotificationsWithError:(NSError *)error
+{
+    if ([self.appDelegateInterceptor.secondResponder respondsToSelector:@selector(application:didFailToRegisterForRemoteNotificationsWithError:)])
+    {
+        [self.appDelegateInterceptor.secondResponder application:application didFailToRegisterForRemoteNotificationsWithError:error];
+    }
+    SHLog(@"WARNING: Register remote notification failed: %@.", error);
 }
 
 //called when notification arrives and:
@@ -1262,7 +1307,7 @@
         {
             if (!op.isCancelled)
             {
-                [StreetHawk sendLogForCode:LOG_CODE_TIMEOFFSET withComment:[NSString stringWithFormat:@"%ld", (long)offset/60] forAssocId:0 withResult:100/*ignore*/ withHandler:^(id result, NSError *error)
+                [StreetHawk sendLogForCode:LOG_CODE_TIMEOFFSET withComment:[NSString stringWithFormat:@"%ld", (long)offset/60] forAssocId:nil withResult:100/*ignore*/ withHandler:^(id result, NSError *error)
                  {
                      [[NSUserDefaults standardUserDefaults] setObject:@(offset/60) forKey:SETTING_UTC_OFFSET];
                      [[NSUserDefaults standardUserDefaults] synchronize];
@@ -1343,6 +1388,26 @@
     //other cross platform will be add when implement them.
 }
 
+- (void)autoCaptureAdvertisingIdentifierTags
+{
+    BOOL needCapture = YES; //only automatically capture when customer never set this property manually, but it cannot simply check StreetHawk.advertisingIdentifier is empty because automatically captured advertising identifier can change if end-user "Reset Advertising Identifier..." in preferences.
+    NSObject *customerValue = [[NSUserDefaults standardUserDefaults] objectForKey:ADS_CUSTOMERSET];
+    if (customerValue != nil && [customerValue isKindOfClass:[NSNumber class]])
+    {
+        needCapture = ![(NSNumber *)customerValue boolValue];
+    }
+    if (needCapture)
+    {
+        NSString *captureAdvertisingIdentifier = shCaptureAdvertisingIdentifier();
+        if (!shStrIsEmpty(captureAdvertisingIdentifier))
+        {
+            StreetHawk.advertisingIdentifier = captureAdvertisingIdentifier;
+            [[NSUserDefaults standardUserDefaults] setBool:NO forKey:ADS_CUSTOMERSET]; //correct the flag
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }
+    }
+}
+
 - (void)endBackgroundTask:(UIBackgroundTaskIdentifier)backgroundTask
 {
     [[UIApplication sharedApplication] endBackgroundTask:backgroundTask];
@@ -1404,7 +1469,10 @@
         NSAssert(!needClear, @"Exit without page should used for App go to BG only, with needClear = NO");
         page = [[NSUserDefaults standardUserDefaults] objectForKey:ENTER_PAGE_HISTORY]; //for App go BG and log exit
     }
-    NSAssert(page != nil && page.length > 0, @"Try to really exit a page without page name. Stop now.");
+    if (needClear)
+    {
+        NSAssert(page != nil && page.length > 0, @"Try to really exit a page without page name. Stop now."); //only check this when normally exit a page. If needClear=NO it's from App go to BG, and if last seen page is not StreetHawk inherit page the record in ENTER_PAGE_HISTORY is empty.
+    }
     if (page != nil && page.length > 0)
     {
         page = [SHFriendlyNameObject tryFriendlyName:page]; //friendly name is used in notification scenario
@@ -1423,7 +1491,8 @@
         [StreetHawk sendLogForCode:LOG_CODE_VIEW_EXIT withComment:page];
         if (logComplete)
         {
-            NSAssert(self.currentView != nil && [self.currentView.viewName isEqualToString:page], @"When complete enter (%@) different from exit (%@).", self.currentView.viewName, page);
+            NSAssert(self.currentView == nil/*if start page not inherit from SH vc, currentView can be nil*/
+                     || (self.currentView != nil && [self.currentView.viewName isEqualToString:page]), @"When complete enter (%@) different from exit (%@).", self.currentView.viewName, page);
             if (self.currentView != nil && [self.currentView.viewName isEqualToString:page])
             {
                 self.currentView.exitTime = [NSDate date];
@@ -1512,9 +1581,9 @@
     return [self tagString:language forKey:@"sh_language"];
 }
 
-- (BOOL)tagString:(NSObject *)value forKey:(NSString *)key
+- (BOOL)tagString:(NSString *)value forKey:(NSString *)key
 {
-    if (value != nil && !shStrIsEmpty(key))
+    if (!shStrIsEmpty(value) && !shStrIsEmpty(key))
     {
         if ([self checkTagValue:value forKey:key])
         {
@@ -1574,7 +1643,7 @@
     return [self incrementTag:1 forKey:key];
 }
 
-- (BOOL)incrementTag:(int)value forKey:(NSString *)key
+- (BOOL)incrementTag:(double)value forKey:(NSString *)key
 {
     if (!shStrIsEmpty(key))
     {
@@ -1776,6 +1845,16 @@ NSString *SentInstall_IBeacon = @"SentInstall_IBeacon";
 
 -(void)registerInstallWithHandler:(SHCallbackHandler)handler
 {
+    if (shStrIsEmpty(StreetHawk.appKey))
+    {
+        SHLog(@"Warning: Please setup APP_KEY in Info.plist or pass in by parameter.");
+        if (handler)
+        {
+            NSError *error = [NSError errorWithDomain:SHErrorDomain code:0 userInfo:@{NSLocalizedDescriptionKey: @"app_key must be given."}];
+            handler(nil, error);
+        }
+        return;
+    }
     //create a fake SHInstall to get save body
     SHInstall *fakeInstall = [[SHInstall alloc] initWithSuid:@"fake_install"];
     handler = [handler copy];

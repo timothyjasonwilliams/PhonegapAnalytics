@@ -138,6 +138,27 @@ The application version and build version of current Application, formatted as @
 @property (nonatomic, readonly) SHDevelopmentPlatform developmentPlatform;
 
 /**
+ StreetHawk can use `AdvertisingIdentifier` to help trace end-user, however it requires customer's App is capable to use advertising function according to Apple's agreement. If customer's App can get this, pass into StreetHawk.
+ 
+ The steps is:
+ 
+ 1. Add framework AdSupport.framework.
+ 2. Add line: #import <AdSupport/ASIdentifierManager.h>.
+ 3. Add code from system to get advertising identifier and pass to StreetHawk SDK.
+ 
+    `if([[ASIdentifierManager sharedManager] isAdvertisingTrackingEnabled])
+     {
+        NSString *idfaString = [[[ASIdentifierManager sharedManager] advertisingIdentifier] UUIDString];
+        StreetHawk.advertisingIdentifier = idfaString;
+     }`
+ 
+ Since iOS native version 1.8.3 it can automatically capture advertising identifier as long as you add framework AdSupport.framework, thus only step 1 is required.
+ 
+ If customer App set `StreetHawk.advertisingIdentifier = XXX` manually, this will be used at priority. In case SDK capture string is different from customer's, use customer's. Customer can also set ``StreetHawk.advertisingIdentifier = nil;` to give up his own and enable automatically capture.
+ */
+@property (nonatomic, strong) NSString *advertisingIdentifier;
+
+/**
  StreetHawk requires AppDelegate has some common functions, if `autoIntegrateAppDelegate` is YES (by default), customer App does not need to manually implement any of the push-related UIApplicationDelegate protocol methods or pass notifications to the library. The library is able to do this by setting itself as the app delegate, intercepting messages and forwarding them to your original app delegate. This must be setup before register install. It's YES by default but if custome App set it to NO, customer App must implement these functions manually:
  
  `- (void)application:(UIApplication *)application didRegisterUserNotificationSettings:(UIUserNotificationSettings *)notificationSettings  //since iOS 8.0
@@ -183,11 +204,25 @@ The application version and build version of current Application, formatted as @
  - (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation
  {
     return [StreetHawk openURL:url];
+ }
+ 
+ - (BOOL)application:(UIApplication *)application continueUserActivity:(NSUserActivity *)userActivity restorationHandler:(void (^)(NSArray * _Nullable))restorationHandler
+ {
+    return [StreetHawk continueUserActivity:userActivity];
  }`
  */
 @property (nonatomic) BOOL autoIntegrateAppDelegate;
 
 /** @name Handlers */
+
+/**
+ Callback to let customer App to handle deeplinking url.
+ Launch view controller in such scenarios:
+ 1. Click a link "<app_scheme://host/path?param=value>" in Email or social App, launch this App by `openURL`.
+ 2. Notification "Launch page activity" sends from StreetHawk campaign with deeplinking url "<app_scheme://host/path?param=value>", and host not equal "launchvc".
+ 3. Growth recommend friend to install a new App, after first launch Growth automatically match a deeplinking url "<app_scheme://host/path?param=value>" and launch view controller.
+ */
+@property (nonatomic, copy) SHOpenUrlHandler openUrlHandler;
 
 /**
  An instance to deal with log.
@@ -266,18 +301,16 @@ The application version and build version of current Application, formatted as @
 - (NSString *)getFormattedDateTime:(NSTimeInterval)seconds;
 
 /**
- Callback to let customer App to handle deeplinking url.
- Launch view controller in such scenarios:
- 1. Click a link "<app_scheme://host/path?param=value>" in Email or social App, launch this App by `openURL`.
- 2. Notification "Launch page activity" sends from StreetHawk campaign with deeplinking url "<app_scheme://host/path?param=value>", and host not equal "launchvc".
- 3. Growth recommend friend to install a new App, after first launch Growth automatically match a deeplinking url "<app_scheme://host/path?param=value>" and launch view controller.
+ Get current datetime string in Streethawk format (UTC and yyyy-MM-dd HH:mm:ss).
+ @return Streethawk formatted string in style `yyyy-MM-dd HH:mm:ss`, such as 2016-10-21 16:23:18.
  */
-@property (nonatomic, copy) SHOpenUrlHandler openUrlHandler;
+- (NSString *)getCurrentFormattedDateTime;
 
 /**
- StreetHawk can use `AdvertisingIdentifier` to help trace end-user, however it requires customer's App is capable to use advertising function according to Apple's agreement. If customer's App can get this, pass into StreetHawk.
+ Get real App's delegate. If `autoIntegrateAppDelegate = YES` which is by default, the [UIApplication sharedApplication].delegate is actually `SHInterceptor`. It works well in Object-C as it does not really check type when do type-cast `AppDelegate *delegate = (AppDelegate *)[UIApplication sharedApplication].delegate;`, and forward selector works; however it cause crash in Swift which force type check when downcast, thus `let shared = UIApplication.sharedApplication().delegate as! AppDelegate` crash because `SHInterceptor` cannot be casted to `AppDelegate`. To avoid public type `SHInterceptor` and to make Swift can get real App delegate, add this API to return the value.
+ @return Get real App delegate.
  */
-@property (nonatomic, strong) NSString *advertisingIdentifier;
+- (id)getAppDelegate;
 
 /** @name Background Regular Task */
 
@@ -324,7 +357,7 @@ The application version and build version of current Application, formatted as @
  Show this App's preference settings page. Only available since iOS 8. In previous iOS nothing happen.
  @return YES if can show preference page since iOS 8; NO if called in previous iOS and nothing happen.
  */
-- (BOOL)launchSystemPreferenceSettings NS_AVAILABLE_IOS(8_0);
+- (BOOL)launchSystemPreferenceSettings;
 
 /** @name Spotlight and Search */
 
@@ -409,7 +442,7 @@ The application version and build version of current Application, formatted as @
  @param key The key for tag to the user profile. Cannot be empty.
  @return If tag to server return YES; if fail to send to server return NO.
  */
-- (BOOL)tagString:(NSObject *)value forKey:(NSString *)key;
+- (BOOL)tagString:(NSString *)value forKey:(NSString *)key;
 
 /**
  Send log with code=8999. It's used for tagging a number value for user. For example, you can tag user's favourite product count by:
@@ -453,11 +486,11 @@ The application version and build version of current Application, formatted as @
 
 /**
  Send log with code=8997, comment={"key": "<key>", "numeric": <value>}.
- @param value The int value of how many the key should be increment.
+ @param value The numeric value of how many the key should be increment.
  @param key Key for existing tag. Cannot be empty.
  @return If tag to server return YES; if fail to send to server return NO.
  */
-- (BOOL)incrementTag:(int)value forKey:(NSString *)key;
+- (BOOL)incrementTag:(double)value forKey:(NSString *)key;
 
 @end
 

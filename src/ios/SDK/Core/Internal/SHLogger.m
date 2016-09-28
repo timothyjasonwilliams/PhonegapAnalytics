@@ -57,7 +57,7 @@ enum
 @property (nonatomic) NSInteger fgbgSession;  //When App start or go to FG, session+1; when App go to BG session ends.
 
 //Log the information into local sqlite database. Normal events are uploaded after enough number. Special events are logged and uploaded immediately. This function has the flexibility, however for convenience [StreetHawk sendLogForCode:withComment:] is recommended.
-- (void)logComment:(NSString *)comment atTime:(NSDate *)created forCode:(NSInteger)code forAssocId:(NSInteger)assocId withResult:(NSInteger)result withHandler:(SHCallbackHandler)handler;
+- (void)logComment:(NSString *)comment atTime:(NSDate *)created forCode:(NSInteger)code forAssocId:(NSString *)assocId withResult:(NSInteger)result withHandler:(SHCallbackHandler)handler;
 //Uploads local sqlite's log records to the server. This is automatically called if system determine needs to upload.
 - (void)uploadLogsToServerWithHandler:(SHCallbackHandler)handler;
 
@@ -116,7 +116,7 @@ enum
 
 #pragma mark - log and upload functions
 
-- (void)logComment:(NSString *)comment atTime:(NSDate *)created forCode:(NSInteger)code forAssocId:(NSInteger)assocId withResult:(NSInteger)result withHandler:(SHCallbackHandler)handler
+- (void)logComment:(NSString *)comment atTime:(NSDate *)created forCode:(NSInteger)code forAssocId:(NSString *)assocId withResult:(NSInteger)result withHandler:(SHCallbackHandler)handler
 {
     if (!streetHawkIsEnabled())
     {
@@ -215,7 +215,7 @@ enum
         [[NSNotificationCenter defaultCenter] postNotificationName:@"SH_LMBridge_UpdateGeoLocation" object:nil]; //make value update
         double lat_deprecate = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LAT] doubleValue];
         double lng_deprecate = [[[NSUserDefaults standardUserDefaults] objectForKey:SH_GEOLOCATION_LNG] doubleValue];
-        NSString *values = [NSString stringWithFormat: @"0, %ld, '%@', %ld, '%@', %f, %f, 0, %ld, '%ld'", (long)session, shFormatStreetHawkDate(created), (long)code, [comment stringByReplacingOccurrencesOfString:@"'" withString:@"''"], lat_deprecate, lng_deprecate, (long)assocId, (long)result];
+        NSString *values = [NSString stringWithFormat: @"0, %ld, '%@', %ld, '%@', %f, %f, 0, '%@', '%ld'", (long)session, shFormatStreetHawkDate(created), (long)code, [comment stringByReplacingOccurrencesOfString:@"'" withString:@"''"], lat_deprecate, lng_deprecate, shStrIsEmpty(assocId)?@"0":assocId/*avoid insert (null)*/, (long)result];
         NSString *sql_str = [NSString stringWithFormat:@"INSERT OR REPLACE INTO '%@' (%@) VALUES (%@)", tableName, columns, values];
         @synchronized(self)
         {
@@ -246,7 +246,8 @@ enum
             || (code == LOG_CODE_TAG_INCREMENT || code == LOG_CODE_TAG_DELETE || code == LOG_CODE_TAG_ADD)  //immediately send for add/remove/increment user tag
             || (code == LOG_CODE_TIMEOFFSET)  //immediately send for time utc offset change
             || (code == LOG_CODE_HEARTBEAT)  //immediately send for heart beat
-            || (code == LOG_CODE_PUSH_RESULT); //immediately send for pushresult
+            || (code == LOG_CODE_PUSH_RESULT) //immediately send for pushresult
+            || (code == LOG_CODE_FEED_RESULT); //immediately send for feedresult
         }
         else
         {
@@ -466,7 +467,7 @@ enum
     [create_sql appendString:@"'lat' FLOAT, "];
     [create_sql appendString:@"'lng' FLOAT, "];
     [create_sql appendString:@"'mloc' INTEGER, "];
-    [create_sql appendString:@"'msgid' INTEGER, "];
+    [create_sql appendString:@"'msgid' TEXT, "];
     [create_sql appendString:@"'pushresult' INTEGER)"];
     sqlite3_stmt *create_stmt = NULL;
     int create_result = sqlite3_prepare_v2(database, [create_sql UTF8String], -1, &create_stmt, NULL);
@@ -510,12 +511,17 @@ enum
             const char *comment = (const char *)sqlite3_column_text(select_sql, LOG_COL_COMMENT);
             double lat_deprecate = sqlite3_column_double(select_sql, LOG_COL_LAT);
             double lng_deprecate = sqlite3_column_double(select_sql, LOG_COL_LNG);
-            int assocId = sqlite3_column_int(select_sql, LOG_COL_MSGID);
+            const char * assocId = (const char *)sqlite3_column_text(select_sql, LOG_COL_MSGID);
+            NSString *assocIdStr = shCstringToNSString(assocId);
             int result = sqlite3_column_int(select_sql, LOG_COL_PUSHRESULT);
             //mandatory parameters for each logline
             logRecord[@"log_id"] = @(logid);
             logRecord[@"session_id"] = (sessionid==0) ? [NSNull null] : @(sessionid);
             logRecord[@"created_on_client"] = shCstringToNSString(created);
+            NSDate *recordDate = shParseDate(shCstringToNSString(created), 0);
+            NSAssert(recordDate != nil, @"Fail to parse record date.");
+            NSDateFormatter *localDateFormatter = shGetDateFormatter(nil, [NSTimeZone localTimeZone], nil);
+            logRecord[@"created_local_time"] = [localDateFormatter stringFromDate:recordDate];
             logRecord[@"code"] = @(code);
             //Code: -1. Error
             if (code == LOG_CODE_ERROR)
@@ -541,10 +547,6 @@ enum
                 NSAssert(lat != 0 && lng != 0, @"Assert fail try to send 19 or 20 with location 0.");
                 logRecord[@"latitude"] = @(lat);
                 logRecord[@"longitude"] = @(lng);
-                NSDate *recordDate = shParseDate(shCstringToNSString(created), 0);
-                NSAssert(recordDate != nil, @"Fail to parse record date.");
-                NSDateFormatter *localDateFormatter = shGetDateFormatter(nil, [NSTimeZone localTimeZone], nil);
-                logRecord[@"created_local_time"] = [localDateFormatter stringFromDate:recordDate];
             }
             //Code: 21. Beacon Update
             else if (code == LOG_CODE_LOCATION_IBEACON)
@@ -612,10 +614,6 @@ enum
                 {
                     logRecord[@"longitude"] = @(lng);
                 }
-                NSDate *recordDate = shParseDate(shCstringToNSString(created), 0);
-                NSAssert(recordDate != nil, @"Fail to parse record date.");
-                NSDateFormatter *localDateFormatter = shGetDateFormatter(nil, [NSTimeZone localTimeZone], nil);
-                logRecord[@"created_local_time"] = [localDateFormatter stringFromDate:recordDate];
             }
             //Code: 8105. Sessions
             else if (code == LOG_CODE_APP_COMPLETE)
@@ -656,28 +654,36 @@ enum
             //Code: 8200. Feed ACK
             else if (code == LOG_CODE_FEED_ACK)
             {
-                NSAssert(assocId != 0, @"Send feed ack without assocId.");
-                logRecord[@"feed_id"] = @(assocId);
+                NSAssert(!shStrIsEmpty(assocIdStr), @"Send feed ack without assocId.");
+                logRecord[@"feed_id"] = assocIdStr;
             }
             //Code: 8201. Feed Result
             else if (code == LOG_CODE_FEED_RESULT)
             {
-                NSAssert(assocId != 0, @"Send feed result without assocId.");
-                logRecord[@"feed_id"] = @(assocId);
-                NSAssert(result == LOG_RESULT_ACCEPT || result == LOG_RESULT_CANCEL || result == LOG_RESULT_LATER, @"Send feed result with improper result.");
-                logRecord[@"result"] = @(result);
+                NSAssert(!shStrIsEmpty(assocIdStr), @"Send feed result without assocId.");
+                logRecord[@"feed_id"] = assocIdStr;
+                NSDictionary *dictResult = shParseObjectToDict(shCstringToNSString(comment));
+                if (dictResult == nil) //old format
+                {
+                    NSAssert(result == LOG_RESULT_ACCEPT || result == LOG_RESULT_CANCEL || result == LOG_RESULT_LATER, @"Send feed result with improper result.");
+                    logRecord[@"result"] = @(result);
+                }
+                else
+                {
+                    logRecord[@"result"] = dictResult;
+                }
             }
             //Code: 8202. Push ACK
             else if (code == LOG_CODE_PUSH_ACK)
             {
-                NSAssert(assocId != 0, @"Send push ack without assocId.");
-                logRecord[@"message_id"] = @(assocId);
+                NSAssert(!shStrIsEmpty(assocIdStr), @"Send push ack without assocId.");
+                logRecord[@"message_id"] = assocIdStr;
             }
             //Code: 8203. Push Result
             else if (code == LOG_CODE_PUSH_RESULT)
             {
-                NSAssert(assocId != 0, @"Send push result without assocId.");
-                logRecord[@"message_id"] = @(assocId);
+                NSAssert(!shStrIsEmpty(assocIdStr), @"Send push result without assocId.");
+                logRecord[@"message_id"] = assocIdStr;
                 NSAssert(result == LOG_RESULT_ACCEPT || result == LOG_RESULT_CANCEL || result == LOG_RESULT_LATER, @"Send push result with improper result.");
                 logRecord[@"result"] = @(result);
                 NSInteger pushCode = [shCstringToNSString(comment) integerValue];
@@ -862,9 +868,9 @@ enum
     //Module bridge: SH_GEOLOCATION_LAT, SH_GEOLOCATION_LNG, SH_BEACON_BLUETOOTH, SH_BEACON_iBEACON. They are reset after launch.
     //Crash report: CrashLog_MD5. Make sure not sent duplicate crash report again in new install.
     //Customer setting: ENABLE_LOCATION_SERVICE, ENABLE_PUSH_NOTIFICATION, FRIENDLYNAME_KEY, SH_INTERACTIVEPUSH_KEY. Cannot reset, must keep same setting as previous install.
-    //Keep old version and adjust by App itself: APPKEY_KEY, NETWORK_RECOVER_TIME, APPSTATUS_STREETHAWKENABLED, APPSTATUS_DEFAULT_HOST, APPSTATUS_ALIVE_HOST, APPSTATUS_UPLOAD_LOCATION, APPSTATUS_SUBMIT_FRIENDLYNAME, APPSTATUS_SUBMIT_INTERACTIVEBUTTONS, APPSTATUS_CHECK_TIME, APPSTATUS_APPSTOREID, APPSTATUS_DISABLECODES, APPSTATUS_PRIORITYCODES, REGULAR_HEARTBEAT_LOGTIME, REGULAR_LOCATION_LOGTIME, SMART_PUSH_PAYLOAD. These will be updated automatically by App, keep old version till next App update them.
+    //Keep old version and adjust by App itself: APPKEY_KEY, NETWORK_RECOVER_TIME, APPSTATUS_STREETHAWKENABLED, APPSTATUS_DEFAULT_HOST, APPSTATUS_ALIVE_HOST, APPSTATUS_UPLOAD_LOCATION, APPSTATUS_SUBMIT_FRIENDLYNAME, APPSTATUS_SUBMIT_INTERACTIVEBUTTONS, APPSTATUS_CHECK_TIME, APPSTATUS_APPSTOREID, APPSTATUS_DISABLECODES, APPSTATUS_PRIORITYCODES, REGULAR_HEARTBEAT_LOGTIME, REGULAR_LOCATION_LOGTIME, SMART_PUSH_PAYLOAD, SH_GEOFENCE_LATLNG_SENTTIME. These will be updated automatically by App, keep old version till next App update them.
     //APPSTATUS_GEOFENCE_FETCH_LIST: cannot reset to empty, otherwise when change cannot find previous fence so not stop monitor.
-    //User pass in: ADS_IDENTIFIER. Should not delete, move to next install.
+    //User pass in: ADS_IDENTIFIER, ADS_CUSTOMERSET. Should not delete, move to next install.
     //SPOTLIGHT_DEEPLINKING_MAPPING: cannot reset to empty, otherwise when spotlight search cannot find mapping.
     //Rarely use: ALERTSETTINGS_MINUTES, PHONEGAP_8004_PAGE, PHONEGAP_8004_PUSHDATA. These are rarely use, and it will be correct when next customer call, ignore and not reset.
     //Delete SQLite database file, it will be re-build for this fresh new install, thus make sure logid start from 1.
@@ -892,10 +898,10 @@ enum
 
 - (void)sendLogForCode:(NSInteger)code withComment:(NSString *)comment
 {
-    [self sendLogForCode:code withComment:comment forAssocId:0 withResult:100/*ignore*/ withHandler:nil];
+    [self sendLogForCode:code withComment:comment forAssocId:nil withResult:100/*ignore*/ withHandler:nil];
 }
 
--(void)sendLogForCode:(NSInteger)code withComment:(NSString *)comment forAssocId:(NSInteger)assocId withResult:(NSInteger)result withHandler:(SHCallbackHandler)handler
+-(void)sendLogForCode:(NSInteger)code withComment:(NSString *)comment forAssocId:(NSString *)assocId withResult:(NSInteger)result withHandler:(SHCallbackHandler)handler
 {
     BOOL mustContainAssocId = NO;
     if (code == LOG_CODE_PUSH_RESULT || code == LOG_CODE_FEED_RESULT)
@@ -913,13 +919,13 @@ enum
     }
     if (mustContainAssocId)
     {
-        NSAssert(assocId != 0, @"Try to do push or feed related log (%@) without assoc id.", comment);
+        NSAssert(!shStrIsEmpty(assocId), @"Try to do push or feed related log (%@) without assoc id.", comment);
     }
     else
     {
-        NSAssert(assocId == 0, @"Try to do none push or feed related log (%@) with assoc id (%ld).", comment, (long)assocId);
+        NSAssert(shStrIsEmpty(assocId), @"Try to do none push or feed related log (%@) with assoc id (%@).", comment, assocId);
     }
-     
+    NSAssert(shStrIsEmpty(StreetHawk.appKey)/*when app not setup, logger is not initialized on purpose*/ || self.logger != nil, @"Lose logline due to logger is not ready.");
     [self.logger logComment:comment atTime:[NSDate date] forCode:code forAssocId:assocId withResult:result withHandler:handler];
 }
 

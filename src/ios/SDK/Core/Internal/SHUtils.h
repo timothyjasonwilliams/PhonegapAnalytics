@@ -110,11 +110,10 @@ extern NSString *shAppendString(NSString *str1, NSString *str2);
 /** @name UI Utility */
 
 /**
- A common way to present error by showing an alert view with error details.
+ A common way to present error by showing details in an alert view or XCode console log. It's only used in SHSampleDev and SHSampleProd to show alert, others show logline.
  @param error The error to present. If error is nil nothing happen.
- @param announceNetworkError If the error is network problem, this decides whether to show the alert view or not.
  */
-extern void shPresentErrorAlert(NSError *error, BOOL announceNetworkError);
+extern void shPresentErrorAlertOrLog(NSError *error);
 
 /**
  Get corresponding view controller for a view.
@@ -234,5 +233,30 @@ extern BOOL shStrIsEmpty(NSString *str);
  @return If content is same return YES; otherwise return NO.
  */
 extern BOOL shArrayIsSame(NSArray *array1, NSArray *array2);
+
+/**
+ Check whether an open url is from universal linking. Universal linking works on iOS 9+, starting with "http" or "https". If the url is universal linking, it needs to convert to real deeplinking url such as "hawk://...".
+ @param url The pass in url string. 
+ @return If the url is universal linking return YES; otherwise return NO.
+ */
+extern BOOL shIsUniversalLinking(NSString *url);
+
+/**
+ Automatically capture advertising identifier if customer's App add AdSupport.framework. If not return nil.
+ */
+extern NSString *shCaptureAdvertisingIdentifier();
+
+/**
+ Extension to system UIDevice class.
+ */
+@interface UIDevice (SHExt)
+
+/**
+ Get platform string such as "iPhone 9.1". It will be mapping in server side to be readable model "iPhone 7".
+ @return Raw model string.
+ */
+- (NSString *)platformString;
+
+@end
 
 #endif //SH__UTILS__H

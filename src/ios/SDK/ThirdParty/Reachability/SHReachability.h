@@ -52,12 +52,14 @@ typedef NS_ENUM(NSInteger, NetworkStatus) {
 typedef void (^NetworkReachable)(SHReachability * reachability);
 typedef void (^NetworkUnreachable)(SHReachability * reachability);
 
+
 @interface SHReachability : NSObject
 
 @property (nonatomic, copy) NetworkReachable    reachableBlock;
 @property (nonatomic, copy) NetworkUnreachable  unreachableBlock;
 
 @property (nonatomic, assign) BOOL reachableOnWWAN;
+
 
 +(SHReachability*)reachabilityWithHostname:(NSString*)hostname;
 // This is identical to the function above, but is here to maintain
@@ -67,7 +69,7 @@ typedef void (^NetworkUnreachable)(SHReachability * reachability);
 +(SHReachability*)reachabilityWithAddress:(void *)hostAddress;
 +(SHReachability*)reachabilityForLocalWiFi;
 
--(SHReachability *)initWithReachabilityRef:(SCNetworkReachabilityRef)ref;
+-(SHReachability *)initWithSHReachabilityRef:(SCNetworkReachabilityRef)ref;
 
 -(BOOL)startNotifier;
 -(void)stopNotifier;
@@ -85,9 +87,9 @@ typedef void (^NetworkUnreachable)(SHReachability * reachability);
 // Is user intervention required?
 -(BOOL)isInterventionRequired;
 
--(NetworkStatus)currentReachabilityStatus;
+-(NetworkStatus)currentSHReachabilityStatus;
 -(SCNetworkReachabilityFlags)reachabilityFlags;
--(NSString*)currentReachabilityString;
--(NSString*)currentReachabilityFlags;
+-(NSString*)currentSHReachabilityString;
+-(NSString*)currentSHReachabilityFlags;
 
 @end

@@ -235,38 +235,33 @@ NSDictionary *shParseGetParamStringToDict(NSString *str)
 
 #pragma mark - UI Utility
 
-//Tells if the error is one that describes a no-connection to the internet and/or host.
-BOOL shIsNetworkError(NSError *error)
-{
-    return (error.domain == NSURLErrorDomain && (error.code == NSURLErrorNotConnectedToInternet || error.code == kCFURLErrorCannotConnectToHost || error.code == kCFURLErrorNetworkConnectionLost));
-}
-
-void shPresentErrorAlert(NSError *error, BOOL announceNetworkError)
+void shPresentErrorAlertOrLog(NSError *error)
 {
     if (error == nil)  //this checks error inside, so the caller can safely call it directly without checking error.
-        return;
-    dispatch_async(dispatch_get_main_queue(), ^
     {
-        if (shIsNetworkError(error))
-        {
-            if (announceNetworkError)
-            {
-                UIAlertView *alertView = [[UIAlertView alloc] initWithTitle:@"Network error" message:@"You are not currently connected to the internet. Please try again later." delegate:nil cancelButtonTitle:@"Ok" otherButtonTitles:nil];
-                [alertView show];
-            }
-        }
-        else
-        {
-            NSString *errorTitle = error.localizedFailureReason;
-            if (errorTitle == nil || errorTitle.length == 0)
-            {
-                errorTitle = [error.domain isEqualToString:SHErrorDomain] ? @"Error" : error.domain;
-            }
-            NSString *errorMsg = (error.localizedDescription != nil && error.localizedDescription.length > 0) ? error.localizedDescription : @"No detail error message. Please contact App administrator.";
-            UIAlertView *alertView = [[UIAlertView alloc] initWithTitle:errorTitle message:errorMsg delegate:nil cancelButtonTitle:@"Ok" otherButtonTitles:nil];
-            [alertView show];
-        }
-    });
+        return;
+    }
+    NSString *bundleId = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleIdentifier"];
+    if ([bundleId rangeOfString:@"co.streethawk.SHSample"].location != NSNotFound)
+    {
+        //show error alert for StreetHawk SHSampleDev/Prod
+        dispatch_async(dispatch_get_main_queue(), ^
+           {
+               NSString *errorTitle = error.localizedFailureReason;
+               if (shStrIsEmpty(errorTitle))
+               {
+                   NSString *appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+                   errorTitle = [NSString stringWithFormat:@"%@ reports error", appName];
+               }
+               NSString *errorMsg = !shStrIsEmpty(error.localizedDescription) ? error.localizedDescription : @"No detail error message. Please contact App administrator.";
+               UIAlertView *alertView = [[UIAlertView alloc] initWithTitle:errorTitle message:errorMsg delegate:nil cancelButtonTitle:@"Ok" otherButtonTitles:nil];
+               [alertView show];
+           });
+    }
+    else
+    {
+        NSLog(@"StreetHawk report error: %@.", error);
+    }
 }
 
 //Go traverse to UIView's responder till get a UIViewController.
@@ -710,3 +705,73 @@ BOOL shArrayIsSame(NSArray *array1, NSArray *array2)
     }
     return YES;
 }
+
+BOOL shIsUniversalLinking(NSString *url)
+{
+    if (shStrIsEmpty(url))
+    {
+        return NO;
+    }
+    if ([[UIDevice currentDevice].systemVersion doubleValue] < 9.0)
+    {
+        return NO; //universal linking only works on iOS 9.0+.
+    }
+    NSURL *parseUrl = [NSURL URLWithString:url];
+    if (!shStrIsEmpty(parseUrl.scheme) && ([parseUrl.scheme compare:@"http" options:NSCaseInsensitiveSearch] == NSOrderedSame || [parseUrl.scheme compare:@"https" options:NSCaseInsensitiveSearch] == NSOrderedSame))
+    {
+        return YES; //universal linking is normal http(s) scheme. not limited to hwk.io host.
+    }
+    return NO;
+}
+
+NSString *shCaptureAdvertisingIdentifier()
+{
+#ifndef DISABLE_ADVERTISING_IDENTIFIER
+    Class ASIdentifierManagerClass = NSClassFromString(@"ASIdentifierManager");
+    if (ASIdentifierManagerClass) //get nil until customer add AdSupport.framework.
+    {
+        SEL sharedManagerSelector = NSSelectorFromString(@"sharedManager");
+        id sharedManager = ((id (*)(id, SEL))[ASIdentifierManagerClass methodForSelector:sharedManagerSelector])(ASIdentifierManagerClass, sharedManagerSelector);
+        SEL isAdvertisingTrackingEnabledSelector = NSSelectorFromString(@"isAdvertisingTrackingEnabled");
+        BOOL isEnabled = ((BOOL (*)(id, SEL))[sharedManager methodForSelector:isAdvertisingTrackingEnabledSelector])(sharedManager, isAdvertisingTrackingEnabledSelector);
+        if (isEnabled)
+        {
+            SEL advertisingIdentifierSelector = NSSelectorFromString(@"advertisingIdentifier");
+            NSUUID *uuid = ((NSUUID* (*)(id, SEL))[sharedManager methodForSelector:advertisingIdentifierSelector])(sharedManager, advertisingIdentifierSelector);
+            return [uuid UUIDString];
+        }
+    }
+#endif
+    return nil;
+}
+
+#include <sys/sysctl.h>
+
+@implementation UIDevice (SHExt)
+
+#pragma mark - sysctlbyname utils
+
+- (NSString *)getSysInfoByName:(char *)typeSpecifier
+{
+    size_t size;
+    sysctlbyname(typeSpecifier, NULL, &size, NULL, 0);
+    
+    char *answer = malloc(size);
+    sysctlbyname(typeSpecifier, answer, &size, NULL, 0);
+    
+    NSString *results = [NSString stringWithCString:answer encoding: NSUTF8StringEncoding];
+    
+    free(answer);
+    return results;
+}
+
+#pragma mark - public functions
+
+- (NSString *)platformString
+{
+    //model list: http://theiphonewiki.com/wiki/Models.
+    //It's up to server to show read friendly name.
+    return [self getSysInfoByName:"hw.machine"];
+}
+
+@end

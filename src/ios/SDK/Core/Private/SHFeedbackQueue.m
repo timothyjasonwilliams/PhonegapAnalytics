@@ -92,10 +92,20 @@
     [self handleFeedback];
 }
 
-- (void)submitFeedbackForTitle:(NSString *)feedbackTitle withType:(NSInteger)feedbackType withContent:(NSString *)feedbackContent withPushData:(PushDataForApplication *)pushData withShowError:(BOOL)showError withHandler:(SHCallbackHandler)handler
+- (void)submitFeedbackForTitle:(NSString *)feedbackTitle withType:(NSInteger)feedbackType withContent:(NSString *)feedbackContent withPushData:(PushDataForApplication *)pushData withHandler:(SHCallbackHandler)handler
 {
     //pushresult traces user action, no matter request succeed or fail, here means agree to post feedback.
     [pushData sendPushResult:SHResult_Accept withHandler:nil];
+    if (shStrIsEmpty(StreetHawk.currentInstall.suid))
+    {
+        NSError *error = [NSError errorWithDomain:SHErrorDomain code:0 userInfo:@{NSLocalizedDescriptionKey: @"Parameter installid needed to determine Install."}];
+        shPresentErrorAlertOrLog(error);
+        if (handler)
+        {
+            handler(nil, error);
+        }
+        return;
+    }
     NSDictionary *params = @{@"title": NONULL(feedbackTitle), @"feedback_type": @(feedbackType), @"contents": NONULL(feedbackContent), @"built_at": shFormatStreetHawkDate([NSDate date]), @"anonymous": @"no", @"installid": NONULL(StreetHawk.currentInstall.suid)};
     handler = [handler copy];
     [[SHHTTPSessionManager sharedInstance] POST:@"feedback/submit/" hostVersion:SHHostVersion_V1 body:params success:^(NSURLSessionDataTask * _Nullable task, id  _Nullable responseObject)
@@ -105,8 +115,8 @@
                UIWindow *presentWindow = shGetPresentWindow();
                SHMBProgressHUD *resultView = [SHMBProgressHUD showHUDAddedTo:presentWindow animated:YES];
                resultView.mode = SHMBProgressHUDModeText; //only show result text, not show progress bar.
-               resultView.labelText = shLocalizedString(@"STREETHAWK_WINDOW_FEEDBACK_THANKS", @"Thanks for your feedback!");
-               [resultView hide:YES afterDelay:1.5];
+               resultView.label.text = shLocalizedString(@"STREETHAWK_WINDOW_FEEDBACK_THANKS", @"Thanks for your feedback!");
+               [resultView hideAnimated:YES afterDelay:1.5];
            });
         if (handler)
         {
@@ -114,10 +124,7 @@
         }
     } failure:^(NSURLSessionDataTask * _Nullable task, NSError * _Nullable error)
     {
-        if (showError)
-        {
-            shPresentErrorAlert(error, YES);
-        }
+        shPresentErrorAlertOrLog(error);
         if (pushData != nil && pushData.msgID != 0)
         {
             [StreetHawk sendLogForCode:LOG_CODE_ERROR withComment:[NSString stringWithFormat:@"Send feedback meet error: %@. Push msgid: %ld.", error.localizedDescription, (long)pushData.msgID] forAssocId:0 withResult:100/*ignore*/ withHandler:nil];
@@ -168,7 +175,7 @@
             {
                 if (isSubmit)
                 {
-                    [self submitFeedbackForTitle:title withType:0/*discussed: this is not used now*/ withContent:content withPushData:pushData withShowError:YES withHandler:nil];
+                    [self submitFeedbackForTitle:title withType:0/*discussed: this is not used now*/ withContent:content withPushData:pushData withHandler:nil];
                 }
                 else
                 {
@@ -284,7 +291,7 @@
                         feedbackTitle = feedbackChoice;
                     }
                     NSAssert(feedbackTitle != nil, @"Feedback title is mandatory.");
-                    [self submitFeedbackForTitle:feedbackTitle withType:0/*discussed: this is not used now*/ withContent:feedbackContent withPushData:pushData withShowError:YES withHandler:nil];
+                    [self submitFeedbackForTitle:feedbackTitle withType:0/*discussed: this is not used now*/ withContent:feedbackContent withPushData:pushData withHandler:nil];
                     [self checkNextFeedback];
                 }
             };
