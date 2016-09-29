@@ -596,7 +596,13 @@
             {
                 if (self.callbackCommandForFetchFeeds)
                 {
-                    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:arrayFeeds];
+                    //arrayFeeds's element is SHFeedObject which is not compatible with NSJSONSerialization. Convert to NSDictionary to make Phonegap work.
+                    NSMutableArray *arrayDict = [NSMutableArray arrayWithCapacity:arrayFeeds.count];
+                    for (SHFeedObject *feedObj in arrayFeeds)
+                    {
+                        [arrayDict addObject:[feedObj serializeToDictionary]];
+                    }
+                    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:arrayDict];
                     [pluginResult setKeepCallbackAsBool:YES];
                     [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackCommandForFetchFeeds.callbackId];
                 }
@@ -626,9 +632,17 @@
 #ifdef SH_FEATURE_FEED
     if (command.arguments.count == 1)
     {
-        if ([command.arguments[0] isKindOfClass:[NSNumber class]])
+        if ([command.arguments[0] isKindOfClass:[NSNumber class]] || [command.arguments[0] isKindOfClass:[NSString class]])
         {
-            NSInteger feedId = [command.arguments[0] integerValue];
+            NSString *feedId = nil;
+            if ([command.arguments[0] isKindOfClass:[NSNumber class]])
+            {
+                feedId = [NSString stringWithFormat:@"%ld", (long)[command.arguments[0] integerValue]];
+            }
+            else
+            {
+                feedId = command.arguments[0];
+            }
             [StreetHawk sendFeedAck:feedId];
             pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
         }
@@ -655,9 +669,18 @@
 #ifdef SH_FEATURE_FEED
     if (command.arguments.count == 2)
     {
-        if ([command.arguments[0] isKindOfClass:[NSNumber class]] && [command.arguments[1] isKindOfClass:[NSNumber class]])
+        if (([command.arguments[0] isKindOfClass:[NSNumber class]] || [command.arguments[0] isKindOfClass:[NSString class]])
+            && [command.arguments[1] isKindOfClass:[NSNumber class]])
         {
-            NSInteger feedId = [command.arguments[0] integerValue];
+            NSString *feedId = nil;
+            if ([command.arguments[0] isKindOfClass:[NSNumber class]])
+            {
+                feedId = [NSString stringWithFormat:@"%ld", (long)[command.arguments[0] integerValue]];
+            }
+            else
+            {
+                feedId = command.arguments[0];
+            }
             NSInteger feedResult = [command.arguments[1] integerValue];
             if (feedResult < -1 || feedResult > 1)
             {
@@ -665,7 +688,7 @@
             }
             else
             {
-                [StreetHawk sendLogForFeed:feedId withResult:(SHResult)feedResult];
+                [StreetHawk notifyFeedResult:feedId withResult:(SHResult)feedResult];
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
             }
         }
@@ -680,6 +703,63 @@
     }
 #else
     NSString *missPluginMsg = @"\"reportFeedRead\" fail. Please add com.streethawk.feed plugin.";
+    NSLog(@"%@", missPluginMsg);
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:missPluginMsg];
+#endif
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)notifyFeedResult:(CDVInvokedUrlCommand *)command
+{
+    CDVPluginResult *pluginResult = nil;
+#ifdef SH_FEATURE_FEED
+    if (command.arguments.count == 5)
+    {
+        if (([command.arguments[0] isKindOfClass:[NSNumber class]] || [command.arguments[0] isKindOfClass:[NSString class]])
+            && [command.arguments[1] isKindOfClass:[NSString class]]
+            && [command.arguments[2] isKindOfClass:[NSString class]]
+            && [command.arguments[3] isKindOfClass:[NSNumber class]]
+            && [command.arguments[4] isKindOfClass:[NSNumber class]])
+        {
+            NSString *feedId = nil;
+            if ([command.arguments[0] isKindOfClass:[NSNumber class]])
+            {
+                feedId = [NSString stringWithFormat:@"%ld", (long)[command.arguments[0] integerValue]];
+            }
+            else
+            {
+                feedId = command.arguments[0];
+            }
+            NSString *stepId = command.arguments[1];
+            NSString *result = command.arguments[2];
+            BOOL deleted = [command.arguments[3] boolValue];
+            BOOL completed = [command.arguments[4] boolValue];
+            SHResult feedResult = SHResult_Accept;
+            if ([result.lowercaseString containsString:@"accepted"])
+            {
+                feedResult = SHResult_Accept;
+            }
+            else if ([result.lowercaseString containsString:@"postponed"])
+            {
+                feedResult = SHResult_Postpone;
+            }
+            else if ([result.lowercaseString containsString:@"rejected"])
+            {
+                feedResult = SHResult_Decline;
+            }
+            [StreetHawk notifyFeedResult:feedId withResult:feedResult withStepId:stepId deleteFeed:deleted completed:completed];
+        }
+        else
+        {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Parameters expect [feedId_int, stepId_string, feedResult_string, feedDelete_bool, completed_bool]."];
+        }
+    }
+    else
+    {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Wrong number of parameters, expect 5."];
+    }
+#else
+    NSString *missPluginMsg = @"\"notifyFeedResult\" fail. Please add com.streethawk.feed plugin.";
     NSLog(@"%@", missPluginMsg);
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:missPluginMsg];
 #endif

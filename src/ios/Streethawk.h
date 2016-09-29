@@ -181,6 +181,12 @@
 - (void)shReportFeedResult:(CDVInvokedUrlCommand *)command;
 
 /**
+ * Send logline to server for feed result. Command argument is [feedId_int, stepId_string, feedResult_string, feedDelete_bool, completed_bool].
+ * feedResult_string must be accepted|postponed|rejected.
+ */
+- (void)notifyFeedResult:(CDVInvokedUrlCommand *)command;
+
+/**
  * Get Pointzi link to invite friend. Command argument is [utm_campaign_string, shareUrl_string, default_url_string].
  */
 - (void)originateShareWithCampaign:(CDVInvokedUrlCommand *)command;
