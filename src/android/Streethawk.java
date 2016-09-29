@@ -107,7 +107,7 @@ public class Streethawk extends CordovaPlugin implements ISHEventObserver{
 			mSenderID = args.getString(0);
 			Log.e("Anurag","SenderID "+mSenderID+args.getString(0));
             registerISHObserver();
-			return;
+			return true;
 		}
 		if(action.equals("registerPushDataCallback")){
 			return pushDataCallback(callbackContext);
